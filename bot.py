@@ -5,7 +5,7 @@ import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Configuration - Ton vrai token est directement intégré ici
+# Configuration - Ton token est en place
 TOKEN = "8625843812:AAHbyKLK0R5PrywkG9hBadP87QNXQIxOE5k"
 
 # Liste Blanche des Championnats validés
@@ -33,27 +33,38 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
         
     def log_message(self, format, *args):
-        # Désactive les logs de requêtes pour ne pas polluer la console
         return
 
 def run_health_server():
-    """Lance le serveur web obligatoire pour Render sur le port demandé"""
+    """Lance le serveur web obligatoire pour Render"""
     port = int(os.getenv("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    print(f"Serveur de contrôle activé sur le port {port}")
     server.serve_forever()
 
-def main():
-    """Lancement du bot Telegram compatible avec le plan Free de Render"""
-    # 1. On lance le mini-serveur web dans un fil secondaire (thread)
-    threading.Thread(target=run_health_server, daemon=True).start()
-
-    # 2. On lance le bot Telegram avec ton token
+async def start_bot():
+    """Initialise et lance le bot dans la boucle asynchrone principale"""
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     
+    # Initialisation moderne requise par les dernières versions
+    await application.initialize()
+    await application.start()
+    
     print("Le bot est démarré et aux aguets...")
-    application.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    
+    # Maintient le bot en vie indéfiniment
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    # 1. Lance le serveur web de Render en arrière-plan
+    threading.Thread(target=run_health_server, daemon=True).start()
+
+    # 2. Crée et exécute proprement la boucle asynchrone pour le bot Telegram
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(start_bot())
 
 if __name__ == '__main__':
     main()
