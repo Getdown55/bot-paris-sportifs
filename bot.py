@@ -29,10 +29,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 def main():
     """Lancement du bot Telegram"""
     application = Application.builder().token(TOKEN).build()
+    
+    # Ajout des commandes
     application.add_handler(CommandHandler("start", start))
     
-    print("Le bot est en cours d'exécution...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    print("Le bot est démarré et aux aguets...")
+    
+    # Lancement du bot en tâche de fond de manière stable
+    application.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
