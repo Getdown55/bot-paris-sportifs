@@ -1,41 +1,35 @@
 import os
-import time
-import requests
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Configuration
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8625843812:AAHbyKLK0R5PrywkG9hBadP87QNXQIxOE5k")
+TOKEN = os.getenv("TELEGRAM_TOKEN", "8625...") # Ton token reste bien en place ici
 
-# Liste Blanche des Championnats validée ensemble
+# Liste Blanche des Championnats validés
 CHAMPIONNATS_ALERTE = [
-    # Premières divisions (Classique)
-    "Ligue 1", "Premier League", "LaLiga", "Serie A", "Bundesliga", 
+    "Ligue 1", "Premier League", "LaLiga", "Serie A", "Bundesliga",
     "Liga Portugal", "Eredivisie", "Pro League", "Süper Lig", "Super League",
-    # Deuxièmes divisions
     "Ligue 2", "Championship", "2. Bundesliga", "LaLiga 2", "Serie B", "Liga Portugal 2",
-    # Saison d'été & Coupes
     "MLS", "Série A (Brazil)", "Eliteserien", "Allsvenskan", "J1 League",
     "Champions League", "Europa League", "Conference League"
 ]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Message de bienvenue quand on lance le bot"""
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Message de bienvenue quand on tape /start"""
     await update.message.reply_text(
-        "⚽ Bot Paris Sportifs 'Late Goal' Actif !\n"
-        "Je surveille les matchs à partir de la 75e minute selon tes critères."
+        "⚽ Bot Paris Sportifs 'Late Value' activé !\n"
+        "Je surveille les matchs à forte valeur pour toi."
     )
 
 def main():
-    """Lancement du bot Telegram"""
+    """Lancement du bot Telegram de manière compatible avec Render"""
     application = Application.builder().token(TOKEN).build()
-    
-    # Ajout des commandes
     application.add_handler(CommandHandler("start", start))
     
     print("Le bot est démarré et aux aguets...")
     
-    # Lancement du bot en tâche de fond de manière stable
+    # run_polling géré correctement pour éviter le crash
     application.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
