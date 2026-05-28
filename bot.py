@@ -1,8 +1,5 @@
 import os
 import asyncio
-import http.server
-import socketserver
-import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -25,31 +22,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Je surveille les matchs à forte valeur pour toi."
     )
 
-def lance_serveur_factice():
-    """Crée un mini-serveur web pour empêcher Render de couper le bot"""
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-type", "text/html")
-            self.end_headers()
-            self.wfile.write(b"Bot en cours d'execution...")
-
-    port = int(os.environ.get("PORT", 8000))
-    with socketserver.TCPServer(("0.0.0.0", port), Handler) as httpd:
-        print(f"Serveur factice activé sur le port {port}")
-        httpd.serve_forever()
-
 def main():
-    """Lancement du bot Telegram de manière compatible avec Render"""
-    # On lance le serveur factice en arrière-plan pour faire plaisir à Render
-    threading.Thread(target=lance_serveur_factice, daemon=True).start()
-
+    """Lancement du bot Telegram en mode Worker standard"""
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     
     print("Le bot est démarré et aux aguets...")
     
-    # run_polling géré correctement pour éviter le crash
+    # Lancement classique en tâche de fond
     application.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
