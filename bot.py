@@ -5,8 +5,8 @@ import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Configuration
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8625...") # Ton token reste bien en place ici
+# Configuration - Ton vrai token est directement intégré ici
+TOKEN = "8625843812:AAHbyKLK0R5PrywkG9hBadP87QNXQIxOE5k"
 
 # Liste Blanche des Championnats validés
 CHAMPIONNATS_ALERTE = [
@@ -48,7 +48,7 @@ def main():
     # 1. On lance le mini-serveur web dans un fil secondaire (thread)
     threading.Thread(target=run_health_server, daemon=True).start()
 
-    # 2. On lance le bot Telegram normalement
+    # 2. On lance le bot Telegram avec ton token
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     
