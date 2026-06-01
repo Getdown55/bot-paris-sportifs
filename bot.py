@@ -134,21 +134,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Permet juste de valider que le bot répond bien"""
     await update.message.reply_text("Le bot de surveillance xG est bien actif et configuré H24 ! Écrans branchés.")
 
-def main():
-    # Lancement du serveur web dans un thread séparé pour Render / UptimeRobot
-    threading.Thread(target=lancer_serveur_web, daemon=True).start()
-
+async def main_async():
     # Configuration de l'application Telegram
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
 
-    # Ajout de la boucle de surveillance des matchs en arrière-plan
-    loop = asyncio.get_event_loop()
-    loop.create_task(verifier_matchs_et_alerter(application))
+    # Ajout de la boucle de surveillance des matchs en arrière-plan de manière propre
+    asyncio.create_task(verifier_matchs_et_alerter(application))
 
-    # Lancement du Bot Telegram
+    # Lancement du Bot Telegram (gère sa propre boucle asynchrone)
     print("Bot lancé et prêt à scanner...")
-    application.run_polling()
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    # Maintient l'application ouverte
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    # Lancement du serveur web dans un thread séparé pour Render / UptimeRobot
+    threading.Thread(target=lancer_serveur_web, daemon=True).start()
+    
+    # Lancement de la boucle asynchrone principale compatible Python 3.14+
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
