@@ -53,3 +53,102 @@ def recuperer_matchs_fotmob():
     except Exception as e:
         print(f"Erreur scraping FotMob : {e}")
         return None
+
+# ==========================================
+# ANALYSE DES MATCHS ET STRATÉGIE xG
+# ==========================================
+async def verifier_matchs_et_alerter(application: Application):
+    """Boucle de surveillance qui tourne en arrière-plan toutes les minutes"""
+    global MATCHS_ALERTES
+    while True:
+        data = recuperer_matchs_fotmob()
+        if data and "leagues" in data:
+            for league in data["leagues"]:
+                nom_league = league.get("name")
+                if nom_league in CHAMPIONNATS_ALERTE:
+                    for match in league.get("matches", []):
+                        match_id = str(match.get("id"))
+                        
+                        # On ne vérifie que les matchs EN DIRECT
+                        if match.get("status", {}).get("live", False):
+                            # On récupère le temps de jeu
+                            try:
+                                minute = int(match.get("status", {}).get("liveTime", {}).get("short", "0").replace("'", ""))
+                            except:
+                                minute = 0
+
+                            # FILTRE 1 : Cibler uniquement entre la 75ème et la 90ème minute
+                            if 75 <= minute <= 90 and match_id not in MATCHS_ALERTES:
+                                score = match.get("status", {}).get("scoreStr", "0-0").replace(" ", "")
+                                
+                                # On récupère les xG globaux du match (somme des deux équipes)
+                                xg_domicile = float(match.get("stats", {}).get("xgHome", 0.0) or 0.0)
+                                xg_exterieur = float(match.get("stats", {}).get("xgAway", 0.0) or 0.0)
+                                xg_total = xg_domicile + xg_exterieur
+
+                                # FILTRE 2 & 3 : Vérification du score et du seuil xG personnalisé
+                                if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
+                                    domicile = match.get("home", {}).get("name", "Domicile")
+                                    exterieur = match.get("away", {}).get("name", "Extérieur")
+                                    
+                                    # Construction du message d'alerte Telegram
+                                    message = (
+                                        f"🚨 **ALERTE BUT PROBABLE ({minute}')** 🚨\n\n"
+                                        f"🏆 {nom_league}\n"
+                                        f"⚔️ {domicile} vs {exterieur}\n"
+                                        f"📊 Score actuel : {score}\n"
+                                        f"📈 Total xG du match : {xg_total:.2f} (Seuil requis : {SEUILS_XG[score]:.2f})\n\n"
+                                        f"💡 *Statistiquement, un but est très proche !*"
+                                    )
+                                    
+                                    # Envoi direct à ton ID Telegram fixe
+                                    try:
+                                        await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=message, parse_mode="Markdown")
+                                        MATCHS_ALERTES.add(match_id)
+                                        print(f"Alerte envoyée pour {domicile} - {exterieur}")
+                                    except Exception as e:
+                                        print(f"Erreur envoi Telegram : {e}")
+
+        await asyncio.sleep(60)  # Vérification toutes les 60 secondes
+
+# ==========================================
+# SERVEUR HTTP POUR LA SURVEILLANCE RENDER
+# ==========================================
+class WebServerHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"Bot en cours d'execution...")
+
+def lancer_serveur_web():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), WebServerHandler)
+    print(f"Serveur Web activé sur le port {port}")
+    server.serve_forever()
+
+# ==========================================
+# COMMANDE TELEGRAM ET COMMENCEMENT
+# ==========================================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Permet juste de valider que le bot répond bien"""
+    await update.message.reply_text("Le bot de surveillance xG est bien actif et configuré H24 ! Écrans branchés.")
+
+def main():
+    # Lancement du serveur web dans un thread séparé pour Render / UptimeRobot
+    threading.Thread(target=lancer_serveur_web, daemon=True).start()
+
+    # Configuration de l'application Telegram
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+
+    # Ajout de la boucle de surveillance des matchs en arrière-plan
+    loop = asyncio.get_event_loop()
+    loop.create_task(verifier_matchs_et_alerter(application))
+
+    # Lancement du Bot Telegram
+    print("Bot lancé et prêt à scanner...")
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
