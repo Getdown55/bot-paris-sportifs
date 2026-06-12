@@ -23,7 +23,7 @@ CHAMPIONNATS_ALERTE = [
 # Ton ID Telegram fixe (plus besoin de faire /start après un redémarrage)
 CHAT_ID_CIBLE = 8684553871
 
-# Tes nouveaux seuils de xG optimisés (Image 9c0af09b-5206-4c53-ae29-adf5d206cc16)
+# Tes nouveaux seuils de xG optimisés
 SEUILS_XG = {
     "0-0": 1.20,
     "1-0": 1.65,
@@ -120,6 +120,11 @@ class WebServerHandler(BaseHTTPRequestHandler):
         self.send_header("Content-type", "text/html")
         self.end_headers()
         self.wfile.write(b"Bot en cours d'execution...")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
 
 def lancer_serveur_web():
     port = int(os.environ.get("PORT", 8080))
