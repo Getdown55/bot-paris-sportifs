@@ -12,18 +12,19 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ==========================================
 TOKEN = "8625843812:AAHbyKLK0R5PrywkG9hBadP87QNXQIxOE5k"
 
-CHAMPIONNATS_ALERTE = [
+# Mots-clés contenus dans les championnats à surveiller (plus besoin du nom exact)
+MOTS_CLES_CHAMPIONNATS = [
     "Ligue 1", "Premier League", "LaLiga", "Serie A", "Bundesliga",
     "Liga Portugal", "Eredivisie", "Pro League", "Süper Lig", "Super League",
     "Ligue 2", "Championship", "2. Bundesliga", "LaLiga 2", "Serie B", "Liga Portugal 2",
-    "MLS", "Série A (Brazil)", "Eliteserien", "Allsvenskan", "J1 League",
+    "MLS", "Brazil", "Eliteserien", "Allsvenskan", "J1 League",
     "Champions League", "Europa League", "Conference League", "World Cup"
 ]
 
-# Ton ID Telegram fixe (plus besoin de faire /start après un redémarrage)
+# Ton ID Telegram fixe
 CHAT_ID_CIBLE = 8684553871
 
-# Tes nouveaux seuils de xG optimisés
+# Seils de xG optimisés
 SEUILS_XG = {
     "0-0": 1.20,
     "1-0": 1.65,
@@ -64,8 +65,12 @@ async def verifier_matchs_et_alerter(application: Application):
         data = recuperer_matchs_fotmob()
         if data and "leagues" in data:
             for league in data["leagues"]:
-                nom_league = league.get("name")
-                if nom_league in CHAMPIONNATS_ALERTE:
+                nom_league = league.get("name", "")
+                
+                # Vérification souple : on regarde si un de nos mots-clés est DANS le nom de la ligue
+                est_un_championnat_cible = any(mot.lower() in nom_league.lower() for mot in MOTS_CLES_CHAMPIONNATS)
+                
+                if est_un_championnat_cible:
                     for match in league.get("matches", []):
                         match_id = str(match.get("id"))
                         
@@ -79,6 +84,7 @@ async def verifier_matchs_et_alerter(application: Application):
 
                             # FILTRE 1 : Cibler uniquement entre la 75ème et la 90ème minute
                             if 75 <= minute <= 90 and match_id not in MATCHS_ALERTES:
+                                # Nettoyage strict du score (enlève tous les espaces possibles)
                                 score = match.get("status", {}).get("scoreStr", "0-0").replace(" ", "")
                                 
                                 # On récupère les xG globaux du match (somme des deux équipes)
@@ -144,10 +150,10 @@ async def main_async():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
 
-    # Ajout de la boucle de surveillance des matchs en arrière-plan de manière propre
+    # Ajout de la boucle de surveillance des matchs en arrière-plan
     asyncio.create_task(verifier_matchs_et_alerter(application))
 
-    # Lancement du Bot Telegram (gère sa propre boucle asynchrone)
+    # Lancement du Bot Telegram
     print("Bot lancé et prêt à scanner...")
     await application.initialize()
     await application.start()
@@ -158,10 +164,10 @@ async def main_async():
         await asyncio.sleep(3600)
 
 def main():
-    # Lancement du serveur web dans un thread séparé pour Render / UptimeRobot
+    # Lancement du serveur web pour Render / UptimeRobot
     threading.Thread(target=lancer_serveur_web, daemon=True).start()
     
-    # Lancement de la boucle asynchrone principale compatible Python 3.14+
+    # Lancement de la boucle asynchrone principale
     asyncio.run(main_async())
 
 if __name__ == "__main__":
