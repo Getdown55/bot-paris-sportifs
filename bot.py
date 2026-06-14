@@ -8,7 +8,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ==========================================
 # CONFIGURATION & FILTRES PERSONNALISÉS
 # ==========================================
-TOKEN = "8625843812:AAHbyKLK0R5PrywkG9hBadP87QNXQIxOE5k"
+TOKEN = "8625843812:AAGkWr-L7p3MQAmvWdIW0HYhki0ZJXeNPmc"
+
 
 MOTS_CLES_CHAMPIONNATS = [
     "Ligue 1", "Premier League", "LaLiga", "Serie A", "Bundesliga",
