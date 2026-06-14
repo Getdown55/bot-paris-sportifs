@@ -1,9 +1,7 @@
 import os
 import asyncio
-import threading
 import json
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -105,65 +103,47 @@ async def verifier_matchs_et_alerter(application: Application):
         await asyncio.sleep(60)
 
 # ==========================================
-# SERVEUR HTTP POUR LA SURVEILLANCE RENDER
+# SERVEUR WEB ASYNC (Pour satisfaire Render)
 # ==========================================
-class WebServerHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-        self.wfile.write(b"Bot en cours d'execution...")
+async def gerer_ping_render(reader, writer):
+    """Répond immédiatement 200 OK aux requêtes de Render de manière asynchrone"""
+    data = await reader.read(100)
+    reponse = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 24\r\n\r\nBot xG en cours de run..."
+    writer.write(reponse)
+    await writer.drain()
+    writer.close()
+    await writer.wait_closed()
 
-    def do_HEAD(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
-def lancer_serveur_web():
+async def lancer_serveur_web_async():
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), WebServerHandler)
-    print(f"Serveur Web activé sur le port {port}")
-    server.serve_forever()
+    serveur = await asyncio.start_server(gerer_ping_render, "0.0.0.0", port)
+    print(f"Serveur Web Asynchrone activé sur le port {port}")
+    async with serveur:
+        await serveur.serve_forever()
 
 # ==========================================
 # COMMANDE TELEGRAM ET INITIALISATION
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Le bot de surveillance xG est actif et stabilisé !")
+    await update.message.reply_text("Le bot de surveillance xG est actif, stabilisé et sans conflits !")
 
-async def main_async():
-    """Gère l'initialisation et le polling de manière asynchrone et propre"""
+def main():
+    # 1. On crée l'application Telegram normalement
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
 
-    # Initialisation manuelle et sécurisée de l'application Telegram
-    await application.initialize()
-    await application.start()
+    # 2. On récupère la boucle d'événements par défaut de run_polling
+    # et on y injecte notre boucle de scan + notre serveur web asynchrone
+    loop = asyncio.get_event_loop()
     
-    # On lance la boucle de surveillance en tâche de fond dans la boucle principale
-    asyncio.create_task(verifier_matchs_et_alerter(application))
-    
-    # On démarre le polling officiel
-    print("Démarrage du bot Telegram (Polling actif)...")
-    await application.updater.start_polling()
-    
-    # Maintient le thread principal éveillé tant que le bot tourne
-    while True:
-        await asyncio.sleep(3600)
+    print("Injection des tâches asynchrones...")
+    loop.create_task(lancer_serveur_web_async())
+    loop.create_task(verifier_matchs_et_alerter(application))
 
-def main():
-    # 1. Lancement du serveur Web en arrière-plan pour Render
-    threading.Thread(target=lancer_serveur_web, daemon=True).start()
-    
-    # 2. Création forcée d'une nouvelle boucle d'événements propre pour éviter l'erreur de thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # 3. Exécution globale
-    try:
-        loop.run_until_complete(main_async())
-    except KeyboardInterrupt:
-        print("Arrêt demandé.")
+    # 3. On lance le polling classique. Cette fonction va bloquer le script proprement
+    # et exécuter toutes nos tâches en même temps sans planter !
+    print("Démarrage final du bot...")
+    application.run_polling(close_loop=False)
 
 if __name__ == "__main__":
     main()
