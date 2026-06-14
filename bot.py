@@ -131,24 +131,39 @@ def lancer_serveur_web():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Le bot de surveillance xG est actif et stabilisé !")
 
-async def post_init(application: Application):
-    """Lance la boucle de surveillance AUTOMATIQUEMENT après le démarrage propre du bot"""
-    asyncio.create_task(verifier_matchs_et_alerter(application))
-
-def main():
-    # 1. Lancement du serveur Web en tâche de fond pour Render
-    threading.Thread(target=lancer_serveur_web, daemon=True).start()
-    
-    # 2. Configuration propre de l'application Telegram
-    # On utilise 'post_init' pour lier notre boucle de scan au cycle de vie officiel du bot
-    application = Application.builder().token(TOKEN).post_init(post_init).build()
+async def main_async():
+    """Gère l'initialisation et le polling de manière asynchrone et propre"""
+    application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
 
-    # 3. Lancement officiel de la méthode run_polling()
-    # Cette fonction native gère proprement les signaux d'arrêt de Render (SIGTERM) 
-    # et coupe immédiatement les connexions pour éviter les conflits au prochain déploiement.
-    print("Démarrage du bot avec gestion des signaux d'arrêt...")
-    application.run_polling(close_loop=False)
+    # Initialisation manuelle et sécurisée de l'application Telegram
+    await application.initialize()
+    await application.start()
+    
+    # On lance la boucle de surveillance en tâche de fond dans la boucle principale
+    asyncio.create_task(verifier_matchs_et_alerter(application))
+    
+    # On démarre le polling officiel
+    print("Démarrage du bot Telegram (Polling actif)...")
+    await application.updater.start_polling()
+    
+    # Maintient le thread principal éveillé tant que le bot tourne
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    # 1. Lancement du serveur Web en arrière-plan pour Render
+    threading.Thread(target=lancer_serveur_web, daemon=True).start()
+    
+    # 2. Création forcée d'une nouvelle boucle d'événements propre pour éviter l'erreur de thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # 3. Exécution globale
+    try:
+        loop.run_until_complete(main_async())
+    except KeyboardInterrupt:
+        print("Arrêt demandé.")
 
 if __name__ == "__main__":
     main()
