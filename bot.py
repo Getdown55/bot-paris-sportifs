@@ -106,7 +106,6 @@ async def verifier_matchs_et_alerter(application: Application):
 # SERVEUR WEB ASYNC (Pour satisfaire Render)
 # ==========================================
 async def gerer_ping_render(reader, writer):
-    """Répond immédiatement 200 OK aux requêtes de Render de manière asynchrone"""
     data = await reader.read(100)
     reponse = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 24\r\n\r\nBot xG en cours de run..."
     writer.write(reponse)
@@ -122,28 +121,36 @@ async def lancer_serveur_web_async():
         await serveur.serve_forever()
 
 # ==========================================
-# COMMANDE TELEGRAM ET INITIALISATION
+# COMMANDE TELEGRAM ET POINT D'ENTRÉE ASYNC
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Le bot de surveillance xG est actif, stabilisé et sans conflits !")
+    await update.message.reply_text("Le bot de surveillance xG est actif et parfaitement stabilisé !")
 
-def main():
-    # 1. On crée l'application Telegram normalement
+async def main_async():
+    # 1. On configure le bot Telegram
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
 
-    # 2. On récupère la boucle d'événements par défaut de run_polling
-    # et on y injecte notre boucle de scan + notre serveur web asynchrone
-    loop = asyncio.get_event_loop()
+    # 2. On initialise et démarre le bot dans la boucle principale moderne
+    await application.initialize()
+    await application.start()
     
-    print("Injection des tâches asynchrones...")
-    loop.create_task(lancer_serveur_web_async())
-    loop.create_task(verifier_matchs_et_alerter(application))
+    # 3. On lance nos deux services (Serveur web + Scanner FotMob) côte à côte
+    print("Lancement combiné des services...")
+    asyncio.create_task(lancer_serveur_web_async())
+    asyncio.create_task(verifier_matchs_et_alerter(application))
+    
+    # 4. On lance l'écoute des messages Telegram en mode asynchrone pur
+    print("Démarrage final de l'écoute Telegram...")
+    await application.updater.start_polling()
+    
+    # On maintient l'application active indéfiniment
+    while True:
+        await asyncio.sleep(3600)
 
-    # 3. On lance le polling classique. Cette fonction va bloquer le script proprement
-    # et exécuter toutes nos tâches en même temps sans planter !
-    print("Démarrage final du bot...")
-    application.run_polling(close_loop=False)
+def main():
+    # Utilisation exclusive de la méthode moderne exigée par Python 3.14
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
