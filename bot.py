@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ==========================================
 # CONFIGURATION & FILTRES PERSONNALISÉS
 # ==========================================
-TOKEN = os.environ.get("TELEGRAM_TOKEN", "8625843812:AAGkWr-L7p3MQAmvWdIW0HYhki0ZJXeNPmc")
+TOKEN = "8625843812:AAGkWr-L7p3MQAmvWdIW0HYhki0ZJXeNPmc"
 
 
 
