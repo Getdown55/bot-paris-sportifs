@@ -63,4 +63,96 @@ async def verifier_matchs_et_alerter(application: Application):
                     est_un_championnat_cible = any(mot.lower() in nom_league.lower() for mot in MOTS_CLES_CHAMPIONNATS)
                     
                     if est_un_championnat_cible:
-                        for match in league.get("matches
+                        for match in league.get("matches", []):
+                            match_id = str(match.get("id"))
+                            
+                            if match.get("status", {}).get("live", False):
+                                try:
+                                    minute = int(match.get("status", {}).get("liveTime", {}).get("short", "0").replace("'", ""))
+                                except:
+                                    minute = 0
+
+                                if 75 <= minute <= 90 and match_id not in MATCHS_ALERTES:
+                                    score = match.get("status", {}).get("scoreStr", "0-0").replace(" ", "")
+                                    
+                                    xg_domicile = float(match.get("stats", {}).get("xgHome", 0.0) or 0.0)
+                                    xg_exterieur = float(match.get("stats", {}).get("xgAway", 0.0) or 0.0)
+                                    xg_total = xg_domicile + xg_exterieur
+
+                                    if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
+                                        domicile = match.get("home", {}).get("name", "Domicile")
+                                        exterieur = match.get("away", {}).get("name", "Extérieur")
+                                        
+                                        message = (
+                                            f"🚨 **ALERTE BUT PROBABLE ({minute}')** 🚨\n\n"
+                                            f"🏆 {nom_league}\n"
+                                            f"⚔️ {domicile} vs {exterieur}\n"
+                                            f"📊 Score actuel : {score}\n"
+                                            f"📈 Total xG du match : {xg_total:.2f} (Seuil requis : {SEUILS_XG[score]:.2f})\n\n"
+                                            f"💡 *Statistiquement, un but est très proche !*"
+                                        )
+                                        
+                                        try:
+                                            await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=message, parse_mode="Markdown")
+                                            MATCHS_ALERTES.add(match_id)
+                                            print(f"Alerte envoyée pour {domicile} - {exterieur}")
+                                        except Exception as e:
+                                            print(f"Erreur envoi Telegram : {e}")
+        except Exception as e:
+            print(f"Erreur dans la boucle principale : {e}")
+
+        await asyncio.sleep(60)
+
+# ==========================================
+# SERVEUR WEB ASYNC (Pour satisfaire Render)
+# ==========================================
+async def gerer_ping_render(reader, writer):
+    try:
+        data = await reader.read(100)
+    except:
+        pass
+    reponse = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 24\r\n\r\nBot xG en cours de run..."
+    try:
+        writer.write(reponse)
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+    except:
+        pass
+
+async def lancer_serveur_web_async():
+    port = int(os.environ.get("PORT", 8080))
+    serveur = await asyncio.start_server(gerer_ping_render, "0.0.0.0", port)
+    print(f"Serveur Web Asynchrone activé sur le port {port}")
+    async with serveur:
+        await serveur.serve_forever()
+
+# ==========================================
+# COMMANDE TELEGRAM ET POINT D'ENTRÉE ASYNC
+# ==========================================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Le bot de surveillance xG est actif et parfaitement stabilisé !")
+
+async def main_async():
+    # 1. On configure le bot Telegram
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+
+    # 2. On initialise et démarre le bot
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    print("Démarrage simultané du serveur Web et du scanner xG...")
+    
+    # Lancement groupé : évite le gel du script au démarrage
+    await asyncio.gather(
+        lancer_serveur_web_async(),
+        verifier_matchs_et_alerter(application)
+    )
+
+def main():
+    asyncio.run(main_async())
+
+if __name__ == "__main__":
+    main()
