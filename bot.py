@@ -36,7 +36,8 @@ MATCHS_ALERTES = set()
 # FONCTION DE SCRAPING DE FOTMOB
 # ==========================================
 def recuperer_matchs_fotmob():
-    url = "https://www.fotmob.com/api/matches?date=today"
+    # URL mondiale robuste avec fuseau horaire Europe/Paris pour éviter la 404
+    url = "https://www.fotmob.com/api/allmatches?timezone=Europe%2FParis"
     try:
         req = urllib.request.Request(
             url, 
@@ -95,12 +96,13 @@ async def verifier_matchs_et_alerter(application: Application):
                                         try:
                                             await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=message, parse_mode="Markdown")
                                             MATCHS_ALERTES.add(match_id)
-                                            print(f"Alerte envoyée pour {domicile} - {exterieur}")
+                                            print(f"Alerte envoyée avec succès pour {domicile} - {exterieur}")
                                         except Exception as e:
                                             print(f"Erreur envoi Telegram : {e}")
         except Exception as e:
             print(f"Erreur dans la boucle principale : {e}")
 
+        # Pause d'une minute avant la prochaine patrouille
         await asyncio.sleep(60)
 
 # ==========================================
@@ -128,28 +130,18 @@ async def lancer_serveur_web_async():
         await serveur.serve_forever()
 
 # ==========================================
-# POINT D'ENTRÉE ASYNC
+# POINT D'ENTRÉE ASYNC PRINICIPAL
 # ==========================================
 async def main_async():
-    # 1. On configure le bot Telegram en mode envoi seul (Zéro conflit)
+    # 1. On configure le bot Telegram en mode envoi seul (Zéro conflit d'instance)
     application = Application.builder().token(TOKEN).build()
 
-    # 2. On initialise le moteur de messages
+    # 2. On initialise le gestionnaire d'envoi
     await application.initialize()
     await application.start()
     
     print("Démarrage simultané du serveur Web et du scanner xG...")
     
-    # 3. Lancement groupé des tâches de fond
+    # 3. Lancement des tâches de fond asynchrones
     asyncio.create_task(lancer_serveur_web_async())
-    asyncio.create_task(verifier_matchs_et_alerter(application))
-    
-    # 4. LE VERROU : Boucle infinie pour maintenir le script "Live" H24
-    while True:
-        await asyncio.sleep(3600)
-
-def main():
-    asyncio.run(main_async())
-
-if __name__ == "__main__":
-    main()
+    asyncio.create_task(verifier_matchs_et_alerter
