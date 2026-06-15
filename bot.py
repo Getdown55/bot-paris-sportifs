@@ -38,7 +38,7 @@ async def lancer_serveur_web_async():
 
 async def verifier_matchs_et_alerter(application):
     global MATCHS_ALERTES
-    print("Patrouille lancée en mode DEBUG.")
+    print("Patrouille lancée avec logique de secours activée.")
     while True:
         data = recuperer_matchs_en_direct()
         if data and "response" in data:
@@ -50,9 +50,19 @@ async def verifier_matchs_et_alerter(application):
                     
                     if 75 <= minute <= 90 and fixture_id not in MATCHS_ALERTES:
                         stats = match.get("statistics", [])
-                        xg_total = sum(float(s.get("home", 0) or 0) + float(s.get("away", 0) or 0) for s in stats if s.get("type") == "Expected Goals")
                         
-                        print(f"Analyse: {match['teams']['home']['name']} vs {match['teams']['away']['name']} ({minute}') | xG: {xg_total}")
+                        # Récupération xG (API)
+                        xg_api = sum(float(s.get("home", 0) or 0) + float(s.get("away", 0) or 0) 
+                                     for s in stats if s.get("type") == "Expected Goals")
+                        
+                        # Récupération Tirs Cadrés (Plan B)
+                        tirs_cadres = sum(int(s.get("home", 0) or 0) + int(s.get("away", 0) or 0) 
+                                          for s in stats if s.get("type") == "Shots on Goal")
+                        
+                        xg_estime = tirs_cadres * 0.20
+                        xg_total = max(xg_api, xg_estime)
+                        
+                        print(f"Analyse: {match['teams']['home']['name']} vs {match['teams']['away']['name']} ({minute}') | xG API: {xg_api} | Estimé: {xg_estime:.2f}")
                         
                         if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
                             msg = f"🚨 {match['teams']['home']['name']} vs {match['teams']['away']['name']}\n📊 Score : {score} | xG : {xg_total:.2f}"
@@ -65,13 +75,11 @@ async def verifier_matchs_et_alerter(application):
 # ==========================================
 if __name__ == "__main__":
     application = Application.builder().token(TOKEN).build()
-    
     async def main_run():
         await application.initialize()
         await application.start()
         asyncio.create_task(lancer_serveur_web_async())
         asyncio.create_task(verifier_matchs_et_alerter(application))
-        print("Bot totalement opérationnel.")
+        print("Bot opérationnel.")
         await asyncio.Event().wait()
-
     asyncio.run(main_run())
