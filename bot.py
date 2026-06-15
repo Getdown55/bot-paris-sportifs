@@ -1,24 +1,25 @@
 import os
 import asyncio
-import json
-import urllib.request
+import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ==========================================
-# CONFIGURATION & FILTRES PERSONNALISÉS
+# CONFIGURATION & CLEFS OFFICIELLES
 # ==========================================
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
-
-MOTS_CLES_CHAMPIONNATS = [
-    "Ligue 1", "Premier League", "LaLiga", "Serie A", "Bundesliga",
-    "Liga Portugal", "Eredivisie", "Pro League", "Süper Lig", "Super League",
-    "Ligue 2", "Championship", "2. Bundesliga", "LaLiga 2", "Serie B", "Liga Portugal 2",
-    "MLS", "Brazil", "Eliteserien", "Allsvenskan", "J1 League",
-    "Champions League", "Europa League", "Conference League", "World Cup"
-]
-
+API_KEY = "Fd062d2a521ed65d8c0944cc4a373600"
 CHAT_ID_CIBLE = 8684553871
+
+# Liste des IDs officiels de l'API pour tes championnats cibles
+# (Évite le tri par texte, on va directement cibler les bonnes compétitions)
+IDS_CHAMPIONNATS = [
+    39, 61, 140, 135, 78,   # Premier League, Ligue 1, LaLiga, Serie A, Bundesliga
+    94, 88, 144, 203, 119,  # Primeira Liga, Eredivisie, Jupiler Pro League, Süper Lig, Super League
+    40, 62, 141, 136, 79,   # Championship, Ligue 2, LaLiga 2, Serie B, 2. Bundesliga
+    253, 71, 103, 99,       # MLS, Serie A (Brésil), Eliteserien, Allsvenskan
+    2, 3, 848, 1            # Champions League, Europa League, Conference League, World Cup
+]
 
 SEUILS_XG = {
     "0-0": 1.20,
@@ -33,25 +34,23 @@ SEUILS_XG = {
 MATCHS_ALERTES = set()
 
 # ==========================================
-# FONCTION DE SCRAPING DE FOTMOB (VERSION INCOGNITO)
+# FONCTION DE RECUPERATION VIA API-FOOTBALL
 # ==========================================
-def recuperer_matchs_fotmob():
-    url = "https://www.fotmob.com/api/allmatches?timezone=Europe%2FParis"
+def recuperer_matchs_en_direct():
+    url = "https://v3.football.api-sports.io/fixtures?live=all"
+    headers = {
+        "x-rapidapi-key": API_KEY,
+        "x-rapidapi-host": "v3.football.api-sports.io"
+    }
     try:
-        # En-tête complet pour imiter Chrome et contourner les 404 de Render
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Referer': 'https://www.fotmob.com/'
-        }
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return json.loads(response.read().decode())
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Erreur API-Football (Status {response.status_code})")
+            return None
     except Exception as e:
-        print(f"Erreur scraping FotMob : {e}")
+        print(f"Erreur requête API-Football : {e}")
         return None
 
 # ==========================================
@@ -59,56 +58,77 @@ def recuperer_matchs_fotmob():
 # ==========================================
 async def verifier_matchs_et_alerter(application: Application):
     global MATCHS_ALERTES
-    print("Boucle de surveillance FotMob initialisée.")
+    print("Boucle de surveillance API-Football initialisée.")
+    
     while True:
         try:
-            data = recuperer_matchs_fotmob()
-            if data and "leagues" in data:
-                print(f"Patrouille effectuée avec succès. {len(data['leagues'])} ligues trouvées.")
+            data = recuperer_matchs_en_direct()
+            if data and "response" in data:
+                matchs_en_cours = data["response"]
+                print(f"Patrouille officielle effectuée. {len(matchs_en_cours)} matchs en direct trouvés dans le monde.")
                 
-                for league in data["leagues"]:
-                    nom_league = league.get("name", "")
-                    est_un_championnat_cible = any(mot.lower() in nom_league.lower() for mot in MOTS_CLES_CHAMPIONNATS)
+                for match in matchs_en_cours:
+                    league_id = match.get("league", {}).get("id")
                     
-                    if est_un_championnat_cible:
-                        for match in league.get("matches", []):
-                            match_id = str(match.get("id"))
+                    # On vérifie si le match fait partie de tes championnats cibles
+                    if league_id in IDS_CHAMPIONNATS:
+                        fixture_id = str(match.get("fixture", {}).get("id"))
+                        nom_league = match.get("league", {}).get("name", "Championnat")
+                        
+                        # Récupération du temps de jeu
+                        minute = match.get("fixture", {}).get("status", {}).get("elapsed", 0)
+                        
+                        if 75 <= minute <= 90 and fixture_id not in MATCHS_ALERTES:
+                            # Récupération du score actuel
+                            goals_home = match.get("goals", {}).get("home", 0)
+                            goals_away = match.get("goals", {}).get("away", 0)
+                            score = f"{goals_home}-{goals_away}"
                             
-                            if match.get("status", {}).get("live", False):
+                            # Récupération des xG (si disponibles dans les stats live de l'API)
+                            # Note : Si les xG live ne sont pas fournis, on se base sur un calcul d'attaques dangereuses/tirs
+                            # Pour rester fidèle à tes seuils, on extrait les tirs ou xG si présents
+                            # API-Football fournit les Tirs aux buts dans le flux live
+                            stats = match.get("statistics", [])
+                            # Par défaut si pas de xG natif, on simule une estimation via les tirs pour ne pas bloquer
+                            xg_total = 0.0
+                            
+                            # Recherche des xG dans les stats si disponibles
+                            for s in stats:
+                                if s.get("type") == "Expected Goals":
+                                    xg_total += float(s.get("home", 0.0)) + float(s.get("away", 0.0))
+                            
+                            # Si l'API ne donne pas les xG en direct sur ce match, on estime avec les tirs cadrés (0.15 xG par tir cadré)
+                            if xg_total == 0.0:
+                                tirs_cadres = 0
+                                for s in stats:
+                                    if s.get("type") == "Shots on Goal":
+                                        tirs_cadres += int(s.get("home") or 0) + int(s.get("away") or 0)
+                                xg_total = tirs_cadres * 0.15
+
+                            if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
+                                domicile = match.get("teams", {}).get("home", {}).get("name", "Domicile")
+                                exterieur = match.get("teams", {}).get("away", {}).get("name", "Extérieur")
+                                
+                                message = (
+                                    f"🚨 **ALERTE BUT PROBABLE ({minute}')** 🚨\n\n"
+                                    f"🏆 {nom_league}\n"
+                                    f"⚔️ {domicile} vs {exterieur}\n"
+                                    f"📊 Score actuel : {score}\n"
+                                    f"📈 Indice de pression / xG : {xg_total:.2f} (Seuil requis : {SEUILS_XG[score]:.2f})\n\n"
+                                    f"💡 *Statistiquement, les conditions d'un but sont réunies !*"
+                                )
+                                
                                 try:
-                                    minute = int(match.get("status", {}).get("liveTime", {}).get("short", "0").replace("'", ""))
-                                except:
-                                    minute = 0
-
-                                if 75 <= minute <= 90 and match_id not in MATCHS_ALERTES:
-                                    score = match.get("status", {}).get("scoreStr", "0-0").replace(" ", "")
+                                    await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=message, parse_mode="Markdown")
+                                    MATCHS_ALERTES.add(fixture_id)
+                                    print(f"Alerte envoyée avec succès pour {domicile} - {exterieur}")
+                                except Exception as e:
+                                    print(f"Erreur envoi Telegram : {e}")
                                     
-                                    xg_domicile = float(match.get("stats", {}).get("xgHome", 0.0) or 0.0)
-                                    xg_exterieur = float(match.get("stats", {}).get("xgAway", 0.0) or 0.0)
-                                    xg_total = xg_domicile + xg_exterieur
-
-                                    if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
-                                        domicile = match.get("home", {}).get("name", "Domicile")
-                                        exterieur = match.get("away", {}).get("name", "Extérieur")
-                                        
-                                        message = (
-                                            f"🚨 **ALERTE BUT PROBABLE ({minute}')** 🚨\n\n"
-                                            f"🏆 {nom_league}\n"
-                                            f"⚔️ {domicile} vs {exterieur}\n"
-                                            f"📊 Score actuel : {score}\n"
-                                            f"📈 Total xG du match : {xg_total:.2f} (Seuil requis : {SEUILS_XG[score]:.2f})\n\n"
-                                            f"💡 *Statistiquement, un but est très proche !*"
-                                        )
-                                        
-                                        try:
-                                            await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=message, parse_mode="Markdown")
-                                            MATCHS_ALERTES.add(match_id)
-                                            print(f"Alerte envoyée avec succès pour {domicile} - {exterieur}")
-                                        except Exception as e:
-                                            print(f"Erreur envoi Telegram : {e}")
         except Exception as e:
             print(f"Erreur dans la boucle principale : {e}")
 
+        # L'API payante autorise un scan régulier, on patrouille toutes les 60 secondes
         await asyncio.sleep(60)
 
 # ==========================================
@@ -143,9 +163,8 @@ async def main_async():
     await application.initialize()
     await application.start()
     
-    print("Démarrage simultané du serveur Web et du scanner xG...")
+    print("Démarrage simultané du serveur Web et du scanner Officiel...")
     
-    # Parenthèses parfaitement fermées ici
     asyncio.create_task(lancer_serveur_web_async())
     asyncio.create_task(verifier_matchs_et_alerter(application))
     
