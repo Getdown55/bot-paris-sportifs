@@ -1,15 +1,14 @@
 import os
 import asyncio
 import requests
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
 API_KEY = "Fd062d2a521ed65d8c0944cc4a373600"
-# Lecture de l'ID depuis Render, avec ton ID canal par défaut
+# Utilise la variable d'environnement ou ton ID par défaut
 CHAT_ID_CIBLE = os.environ.get("CHAT_ID_CIBLE", "-1003960057728")
 
 IDS_CHAMPIONNATS = [
@@ -73,11 +72,17 @@ async def verifier_matchs_et_alerter(application: Application):
         await asyncio.sleep(60)
 
 # ==========================================
-# SERVEUR WEB ET LANCEMENT
+# SERVEUR WEB (Optimisé pour Render)
 # ==========================================
 async def lancer_serveur_web_async():
     port = int(os.environ.get("PORT", 8080))
-    server = await asyncio.start_server(lambda r, w: None, "0.0.0.0", port)
+    async def handle(reader, writer):
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        await writer.drain()
+        writer.close()
+    
+    server = await asyncio.start_server(handle, "0.0.0.0", port)
+    print(f"Serveur Web activé sur le port {port}")
     async with server: await server.serve_forever()
 
 async def main_async():
@@ -85,9 +90,10 @@ async def main_async():
     await application.initialize()
     await application.start()
     
-    # Message de test au démarrage
+    # Message de test au démarrage pour valider la connexion
     try:
         await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot opérationnel : Patrouille lancée !")
+        print("Message de test envoyé.")
     except Exception as e:
         print(f"Erreur envoi message test : {e}")
     
