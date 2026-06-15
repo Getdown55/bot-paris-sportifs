@@ -33,16 +33,21 @@ SEUILS_XG = {
 MATCHS_ALERTES = set()
 
 # ==========================================
-# FONCTION DE SCRAPING DE FOTMOB
+# FONCTION DE SCRAPING DE FOTMOB (VERSION INCOGNITO)
 # ==========================================
 def recuperer_matchs_fotmob():
-    # URL mondiale robuste avec fuseau horaire Europe/Paris pour éviter la 404
     url = "https://www.fotmob.com/api/allmatches?timezone=Europe%2FParis"
     try:
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        )
+        # En-tête complet pour imiter Chrome et contourner les 404 de Render
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Referer': 'https://www.fotmob.com/'
+        }
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:
             return json.loads(response.read().decode())
     except Exception as e:
@@ -59,6 +64,8 @@ async def verifier_matchs_et_alerter(application: Application):
         try:
             data = recuperer_matchs_fotmob()
             if data and "leagues" in data:
+                print(f"Patrouille effectuée avec succès. {len(data['leagues'])} ligues trouvées.")
+                
                 for league in data["leagues"]:
                     nom_league = league.get("name", "")
                     est_un_championnat_cible = any(mot.lower() in nom_league.lower() for mot in MOTS_CLES_CHAMPIONNATS)
@@ -102,7 +109,6 @@ async def verifier_matchs_et_alerter(application: Application):
         except Exception as e:
             print(f"Erreur dans la boucle principale : {e}")
 
-        # Pause d'une minute avant la prochaine patrouille
         await asyncio.sleep(60)
 
 # ==========================================
@@ -130,18 +136,24 @@ async def lancer_serveur_web_async():
         await serveur.serve_forever()
 
 # ==========================================
-# POINT D'ENTRÉE ASYNC PRINICIPAL
+# POINT D'ENTRÉE ASYNC PRINCIPAL
 # ==========================================
 async def main_async():
-    # 1. On configure le bot Telegram en mode envoi seul (Zéro conflit d'instance)
     application = Application.builder().token(TOKEN).build()
-
-    # 2. On initialise le gestionnaire d'envoi
     await application.initialize()
     await application.start()
     
     print("Démarrage simultané du serveur Web et du scanner xG...")
     
-    # 3. Lancement des tâches de fond asynchrones
+    # Parenthèses parfaitement fermées ici
     asyncio.create_task(lancer_serveur_web_async())
-    asyncio.create_task(verifier_matchs_et_alerter
+    asyncio.create_task(verifier_matchs_et_alerter(application))
+    
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    asyncio.run(main_async())
+
+if __name__ == "__main__":
+    main()
