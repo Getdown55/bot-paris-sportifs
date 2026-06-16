@@ -10,6 +10,7 @@ TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
 API_KEY = "Fd062d2a521ed65d8c0944cc4a373600"
 CHAT_ID_CIBLE = os.environ.get("CHAT_ID_CIBLE", "-1003960057728")
 
+# ID 1 est bien présent pour la Coupe du Monde
 IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1]
 SEUILS_XG = {"0-0": 1.20, "1-0": 1.65, "0-1": 1.65, "1-1": 2.10, "2-1": 2.40, "1-2": 2.40, "2-2": 2.80}
 MATCHS_ALERTES = set()
@@ -28,7 +29,6 @@ def recuperer_matchs_en_direct():
         return None
 
 async def run_dummy_server():
-    """Maintient un port ouvert pour satisfaire Render."""
     port = int(os.environ.get("PORT", 10000))
     async def handle(reader, writer):
         writer.write(b"HTTP/1.1 200 OK\r\n\r\nBot actif")
@@ -38,37 +38,38 @@ async def run_dummy_server():
     async with server: await server.serve_forever()
 
 async def verifier_matchs_et_alerter(application):
-    print("Patrouille active avec sécurité anti-blocage.")
+    print("Patrouille lancée. Surveillance active...")
     while True:
-        try:
-            data = recuperer_matchs_en_direct()
-            if data and "response" in data:
-                for match in data["response"]:
-                    if match.get("league", {}).get("id") in IDS_CHAMPIONNATS:
-                        fixture_id = str(match.get("fixture", {}).get("id"))
-                        minute = match.get("fixture", {}).get("status", {}).get("elapsed", 0)
-                        score = f"{match['goals']['home']}-{match['goals']['away']}"
+        data = recuperer_matchs_en_direct()
+        if data and "response" in data:
+            print(f"DEBUG: {len(data['response'])} matchs en direct trouvés.")
+            for match in data["response"]:
+                home = match['teams']['home']['name']
+                away = match['teams']['away']['name']
+                league_id = match.get("league", {}).get("id")
+                
+                print(f"DEBUG: Analyse {home} vs {away} (League ID: {league_id})")
+                
+                if league_id in IDS_CHAMPIONNATS:
+                    fixture_id = str(match.get("fixture", {}).get("id"))
+                    minute = match.get("fixture", {}).get("status", {}).get("elapsed", 0)
+                    score = f"{match['goals']['home']}-{match['goals']['away']}"
+                    
+                    if 75 <= minute <= 90 and fixture_id not in MATCHS_ALERTES:
+                        stats = match.get("statistics", [])
+                        # Extraction xG et Tirs
+                        xg_api = sum(float(s.get("home", 0) or 0) + float(s.get("away", 0) or 0) for s in stats if s.get("type") == "Expected Goals")
+                        tirs_cadres = sum(int(s.get("home", 0) or 0) + int(s.get("away", 0) or 0) for s in stats if s.get("type") == "Shots on Goal")
                         
-                        if 75 <= minute <= 90 and fixture_id not in MATCHS_ALERTES:
-                            stats = match.get("statistics", [])
-                            # xG API
-                            xg_api = sum(float(s.get("home", 0) or 0) + float(s.get("away", 0) or 0) 
-                                         for s in stats if s.get("type") == "Expected Goals")
-                            # Tirs Cadrés (Plan B)
-                            tirs_cadres = sum(int(s.get("home", 0) or 0) + int(s.get("away", 0) or 0) 
-                                              for s in stats if s.get("type") == "Shots on Goal")
-                            
-                            xg_estime = tirs_cadres * 0.20
-                            xg_total = max(xg_api, xg_estime)
-                            
-                            if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
-                                msg = f"🚨 {match['teams']['home']['name']} vs {match['teams']['away']['name']}\n📊 Score : {score} | xG total estimé : {xg_total:.2f}"
-                                await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=msg)
-                                MATCHS_ALERTES.add(fixture_id)
-            else:
-                print("En attente de matchs...")
-        except Exception as e:
-            print(f"Erreur durant la patrouille : {e}")
+                        xg_estime = tirs_cadres * 0.20
+                        xg_total = max(xg_api, xg_estime)
+                        
+                        if score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
+                            msg = f"🚨 {home} vs {away}\n📊 Score : {score} | xG total : {xg_total:.2f}"
+                            await application.bot.send_message(chat_id=CHAT_ID_CIBLE, text=msg)
+                            MATCHS_ALERTES.add(fixture_id)
+        else:
+            print("Aucun match en direct trouvé par l'API.")
         
         await asyncio.sleep(60)
 
@@ -80,5 +81,5 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.create_task(run_dummy_server())
     loop.create_task(verifier_matchs_et_alerter(app))
-    print("Bot lancé avec succès.")
+    print("Bot lancé.")
     app.run_polling()
