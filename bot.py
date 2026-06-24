@@ -1,7 +1,11 @@
 import os
 import asyncio
 import requests
+import logging
 from telegram import Bot
+
+# Configuration du logging pour voir ce qui se passe dans les logs de Render
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # CONFIGURATION
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
@@ -18,9 +22,13 @@ def recuperer_matchs_en_direct():
     try:
         response = requests.get(url, headers=headers, timeout=15)
         return response.json() if response.status_code == 200 else None
-    except: return None
+    except Exception as e:
+        logging.error(f"Erreur lors de la récupération API : {e}")
+        return None
 
-async def verifier_matchs_et_alerter(bot):
+async def run_bot_logic(bot):
+    """Logique principale de surveillance."""
+    logging.info("Démarrage de la boucle de scan...")
     while True:
         data = recuperer_matchs_en_direct()
         if data and "response" in data:
@@ -34,13 +42,8 @@ async def verifier_matchs_et_alerter(bot):
                     status = match.get("fixture", {}).get("status", {}).get("short")
                     score = f"{match['goals']['home']}-{match['goals']['away']}"
                     
-                    # Log de débogage pour ton contrôle
-                    print(f"DEBUG: {home} vs {away} | Minute: {minute} | Status: {status}")
-
-                    # Modification : Surveillance dès la 75e jusqu'à la fin (status != FT)
                     if minute >= 75 and status != "FT" and fixture_id not in MATCHS_ALERTES:
                         stats = match.get("statistics", [])
-                        # Calcul xG sécurisé
                         xg_api = sum(float(s.get("home", 0) or 0) + float(s.get("away", 0) or 0) for s in stats if s.get("type") == "Expected Goals")
                         tirs_cadres = sum(int(s.get("home", 0) or 0) + int(s.get("away", 0) or 0) for s in stats if s.get("type") == "Shots on Goal")
                         xg_total = max(xg_api, tirs_cadres * 0.20)
@@ -54,8 +57,14 @@ async def verifier_matchs_et_alerter(bot):
 
 async def main():
     bot = Bot(token=TOKEN)
-    await bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot opérationnel : Patrouille lancée !")
-    await verifier_matchs_et_alerter(bot)
+    while True:
+        try:
+            logging.info("Initialisation du bot...")
+            await bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot opérationnel : Patrouille lancée !")
+            await run_bot_logic(bot)
+        except Exception as e:
+            logging.error(f"Erreur critique dans la boucle principale : {e}. Redémarrage dans 10s...")
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
     asyncio.run(main())
