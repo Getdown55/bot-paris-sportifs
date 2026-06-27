@@ -1,8 +1,8 @@
 import os
 import asyncio
 import requests
-import time  # <--- Ajout pour le suivi de temps
-import logging # <--- Ajout pour les logs propres
+import time
+import logging
 from telegram.ext import Application
 
 # Configuration du logging
@@ -30,16 +30,6 @@ def recuperer_matchs_en_direct():
         return response.json() if response.status_code == 200 else None
     except:
         return None
-
-async def lancer_serveur_web_async():
-    port = int(os.environ.get("PORT", 10000))
-    async def handle(reader, writer):
-        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nBot en ligne")
-        await writer.drain()
-        writer.close()
-    server = await asyncio.start_server(handle, "0.0.0.0", port)
-    logging.info(f"Serveur Web actif sur port {port}")
-    async with server: await server.serve_forever()
 
 async def verifier_matchs_et_alerter(application):
     global MATCHS_ALERTES
@@ -90,7 +80,7 @@ if __name__ == "__main__":
     async def main_run():
         await application.initialize()
         await application.start()
-        asyncio.create_task(lancer_serveur_web_async())
+        # On lance uniquement la boucle de surveillance
         asyncio.create_task(verifier_matchs_et_alerter(application))
         logging.info("Bot opérationnel.")
         await asyncio.Event().wait()
