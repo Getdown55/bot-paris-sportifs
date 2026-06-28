@@ -1,7 +1,6 @@
 import os
 import asyncio
 import requests
-import time
 import logging
 from telegram import Bot
 
@@ -10,53 +9,57 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
 API_KEY = "Fd062d2a521ed65d8c0944cc4a373600"
 CHAT_ID_CIBLE = os.environ.get("CHAT_ID_CIBLE", "-1003960057728")
+HEADERS = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": "v3.football.api-sports.io"}
 
-# Liste élargie des championnats (assure-toi que l'ID de la compétition est dedans)
 IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1]
-# Seuils abaissés de 0.10 pour être plus réactif
-SEUILS_XG = {"0-0": 1.10, "1-0": 1.55, "0-1": 1.55, "1-1": 2.00, "2-1": 2.30, "1-2": 2.30, "2-2": 2.70}
+SEUILS_XG = {"0-0": 1.20, "1-0": 1.65, "0-1": 1.65, "1-1": 2.10, "2-1": 2.40, "1-2": 2.40, "2-2": 2.80}
 MATCHS_ALERTES = set()
 
 bot = Bot(token=TOKEN)
 
 async def verifier_matchs():
-    logging.info("Patrouille lancée en MODE DÉTECTIVE.")
+    logging.info("Bot lancé : mode strict avec vérification de type.")
     while True:
         try:
-            url = "https://v3.football.api-sports.io/fixtures?live=all"
-            headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": "v3.football.api-sports.io"}
-            response = requests.get(url, headers=headers, timeout=10)
+            url_live = "https://v3.football.api-sports.io/fixtures?live=all"
+            response = requests.get(url_live, headers=HEADERS, timeout=10)
             data = response.json()
 
             if data and "response" in data:
                 for match in data["response"]:
-                    # DÉTECTIVE : On logue chaque match surveillé
-                    home = match['teams']['home']['name']
-                    away = match['teams']['away']['name']
-                    league_id = match.get("league", {}).get("id")
-                    
-                    if league_id in IDS_CHAMPIONNATS:
-                        minute = match.get("fixture", {}).get("status", {}).get("elapsed")
-                        if minute is None: continue
+                    fixture_id = match["fixture"]["id"]
+                    if match["league"]["id"] in IDS_CHAMPIONNATS:
                         
-                        stats = match.get("statistics", [])
-                        xg_api = 0.0
-                        for s in stats:
-                            if s.get("type") == "Expected Goals":
-                                xg_api = float(s.get("home", 0) or 0) + float(s.get("away", 0) or 0)
+                        url_stats = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
+                        resp_stats = requests.get(url_stats, headers=HEADERS, timeout=10)
+                        data_stats = resp_stats.json()
                         
-                        # DÉTECTIVE : Log pour voir ce que le bot calcule réellement
-                        logging.info(f"Analyse: {home} vs {away} | Minute: {minute} | xG calculé: {xg_api}")
+                        xg_total = 0.0
+                        # Lecture STRICTE : on ne prend que la valeur transmise par l'API
+                        if data_stats.get("response"):
+                            for team_stats in data_stats["response"]:
+                                for s in team_stats.get("statistics", []):
+                                    if s.get("type") == "Expected Goals":
+                                        val = s.get("value")
+                                        # On force la conversion : si ce n'est pas un nombre, ça ne plante pas, ça ignore
+                                        try:
+                                            xg_total += float(val) if val is not None else 0.0
+                                        except (ValueError, TypeError):
+                                            continue
+                        
+                        minute = match["fixture"]["status"]["elapsed"]
+                        score = f"{match['goals']['home']}-{match['goals']['away']}"
+                        
+                        # DEBUG : pour voir ce qui se passe réellement
+                        logging.info(f"MATCH: {match['teams']['home']['name']} vs {match['teams']['away']['name']} | Minute: {minute} | Score: {score} | xG Total API: {xg_total}")
 
-                        if 75 <= int(minute) <= 90:
-                            score = f"{match['goals']['home']}-{match['goals']['away']}"
-                            if score in SEUILS_XG and xg_api >= SEUILS_XG[score]:
-                                if str(match['fixture']['id']) not in MATCHS_ALERTES:
-                                    msg = f"🚨 ALERTE : {home} vs {away}\n📊 Score : {score} | xG : {xg_api:.2f}"
-                                    await bot.send_message(chat_id=CHAT_ID_CIBLE, text=msg)
-                                    MATCHS_ALERTES.add(str(match['fixture']['id']))
+                        if 75 <= minute <= 90 and score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
+                            if str(fixture_id) not in MATCHS_ALERTES:
+                                msg = f"🚨 ALERTE : {match['teams']['home']['name']} vs {match['teams']['away']['name']}\n📊 Score : {score} | xG : {xg_total:.2f}"
+                                await bot.send_message(chat_id=CHAT_ID_CIBLE, text=msg)
+                                MATCHS_ALERTES.add(str(fixture_id))
         except Exception as e:
-            logging.error(f"Erreur boucle : {e}")
+            logging.error(f"Erreur technique : {e}")
         
         await asyncio.sleep(60)
 
