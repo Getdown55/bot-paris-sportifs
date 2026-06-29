@@ -4,7 +4,7 @@ import requests
 import logging
 from telegram import Bot
 
-# Configuration du log
+# Configuration du log pour suivre ce que fait le bot
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
@@ -14,24 +14,28 @@ HEADERS = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": "v3.football.api-sports
 
 bot = Bot(token=TOKEN)
 
-async def demarrage():
-    # Envoi du message de confirmation dès le lancement
+async def demarrer_bot():
+    """Envoie une confirmation au lancement."""
     try:
-        await bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot actif et en surveillance...")
+        await bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot en ligne et en surveillance.")
     except Exception as e:
-        logging.error(f"Impossible d'envoyer le message de démarrage : {e}")
+        logging.error(f"Erreur envoi Telegram: {e}")
 
-async def verifier_matchs():
-    logging.info("Le bot est en surveillance...")
+async def surveillance_matchs():
+    logging.info("Surveillance active...")
     while True:
         try:
-            # Ton code de surveillance ici
-            await asyncio.sleep(60)
+            # Ici tu peux remettre ta logique de requête API
+            # Le bot ne crashera plus grâce à la structure ci-dessous
+            await asyncio.sleep(60) 
         except Exception as e:
-            logging.error(f"Erreur : {e}")
+            logging.error(f"Erreur boucle: {e}")
             await asyncio.sleep(60)
 
+async def main():
+    await demarrer_bot()
+    await surveillance_matchs()
+
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(demarrage())
-    loop.run_until_complete(verifier_matchs())
+    # Méthode moderne pour lancer la boucle sans erreur de thread
+    asyncio.run(main())
