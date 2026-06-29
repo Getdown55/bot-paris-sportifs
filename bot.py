@@ -4,38 +4,51 @@ import requests
 import logging
 from telegram import Bot
 
-# ... (tes configurations restent identiques)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
+API_KEY = "Fd062d2a521ed65d8c0944cc4a373600"
+CHAT_ID_CIBLE = os.environ.get("CHAT_ID_CIBLE", "-1003960057728")
+HEADERS = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": "v3.football.api-sports.io"}
+
+# ID des championnats surveillés
+IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1]
+SEUILS_XG = {"0-0": 1.20, "1-0": 1.65, "0-1": 1.65, "1-1": 2.10, "2-1": 2.40, "1-2": 2.40, "2-2": 2.80}
+
+bot = Bot(token=TOKEN)
 
 async def verifier_matchs():
-    logging.info("Démarrage en mode vérification de disponibilité...")
+    logging.info("Le bot est toujours actif et en surveillance...")
     while True:
         try:
-            # ... (récupération de la liste des matchs)
-            
-            # Pour chaque match :
-            # ... (requête statistique)
-            
-            xg_total = None # On change : au lieu de 0.0, on met None (inconnu)
-            
-            if data_stats.get("response"):
-                for team_stats in data_stats["response"]:
-                    for s in team_stats.get("statistics", []):
-                        if s.get("type") == "Expected Goals":
-                            val = s.get("value")
-                            if val is not None:
-                                xg_total = float(val)
+            url = "https://v3.football.api-sports.io/fixtures?live=all"
+            response = requests.get(url, headers=HEADERS, timeout=10)
+            data = response.json()
 
-            # LOGIQUE MODIFIÉE :
-            # Si xg_total est None, on ne conclut pas à 0, on continue d'attendre
-            if xg_total is not None:
-                logging.info(f"DEBUG: {home} vs {away} | xG trouvé : {xg_total}")
-                if 75 <= minute <= 90 and score in SEUILS_XG and xg_total >= SEUILS_XG[score]:
-                    # ... (envoi alerte)
-            else:
-                # La donnée n'est pas encore disponible, on attend la prochaine minute
-                pass
-
-        except Exception as e:
-            logging.error(f"Erreur : {e}")
+            if data and "response" in data:
+                for match in data["response"]:
+                    # Vérification du championnat
+                    if match["league"]["id"] in IDS_CHAMPIONNATS:
+                        # Extraction des données en toute sécurité
+                        xg_val = 0.0
+                        stats = match.get("statistics", [])
+                        for s in stats:
+                            if s.get("type") == "Expected Goals":
+                                xg_val = float(s.get("value") or 0)
+                        
+                        minute = match["fixture"]["status"]["elapsed"]
+                        score = f"{match['goals']['home']}-{match['goals']['away']}"
+                        
+                        # Vérification des seuils
+                        if minute >= 75 and score in SEUILS_XG:
+                            if xg_val >= SEUILS_XG[score]:
+                                # Envoi alerte
+                                await bot.send_message(chat_id=CHAT_ID_CIBLE, text=f"Alerte : {match['teams']['home']['name']} vs {match['teams']['away']['name']} | xG: {xg_val}")
         
-        await asyncio.sleep(60)
+        except Exception as e:
+            logging.error(f"Erreur rencontrée : {e}")
+        
+        await asyncio.sleep(60) # Pause de 1 minute
+
+if __name__ == "__main__":
+    asyncio.run(verifier_matchs())
