@@ -41,6 +41,7 @@ async def verifier_matchs():
                         home, away = match['teams']['home']['name'], match['teams']['away']['name']
                         logging.info(f"DEBUG: {home} vs {away} | TirsC: {tirs_cadres} | xG: {xg_val}")
 
+                        # Calcul de la pression réelle
                         pression_reelle = (tirs_cadres * 0.5) + (tirs_totaux * 0.1) + (xg_val * 2.0)
                         
                         minute = match["fixture"]["status"]["elapsed"] or 0
@@ -49,7 +50,6 @@ async def verifier_matchs():
                             await bot.send_message(chat_id=CHAT_ID_CIBLE, text=msg)
 
             compteur_minutes += 1
-
         except Exception as e:
             logging.error(f"Erreur : {e}")
         
