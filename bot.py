@@ -18,7 +18,6 @@ async def verifier_matchs():
     compteur_minutes = 0
     while True:
         try:
-            # Heartbeat toutes les 60 minutes
             if compteur_minutes >= 60:
                 logging.info("HEARTBEAT: Le bot est toujours en surveillance active.")
                 compteur_minutes = 0
@@ -38,15 +37,19 @@ async def verifier_matchs():
                             if s.get("type") == "Total Shots": tirs_totaux = int(s.get("value") or 0)
                             if s.get("type") == "Expected Goals": xg_val = float(s.get("value") or 0)
                         
-                        home, away = match['teams']['home']['name'], match['teams']['away']['name']
-                        logging.info(f"DEBUG: {home} vs {away} | TirsC: {tirs_cadres} | xG: {xg_val}")
-
-                        # Calcul de la pression réelle
-                        pression_reelle = (tirs_cadres * 0.5) + (tirs_totaux * 0.1) + (xg_val * 2.0)
+                        # Calcul de la pression : si xG est absent (0.0), on booste le poids des tirs
+                        if xg_val == 0.0:
+                            pression_reelle = (tirs_cadres * 0.8) + (tirs_totaux * 0.2)
+                        else:
+                            pression_reelle = (tirs_cadres * 0.5) + (tirs_totaux * 0.1) + (xg_val * 2.0)
                         
+                        home, away = match['teams']['home']['name'], match['teams']['away']['name']
+                        logging.info(f"DEBUG: {home} vs {away} | TirsC: {tirs_cadres} | xG: {xg_val} | Pression: {pression_reelle:.2f}")
+
                         minute = match["fixture"]["status"]["elapsed"] or 0
+                        # Seuil : Après 75 min, si la pression >= 3.5, on envoie l'alerte
                         if minute >= 75 and pression_reelle >= 3.5:
-                            msg = f"🚨 ALERTE PRESSION : {home} vs {away}\n📊 Pression: {pression_reelle:.2f} (xG: {xg_val})"
+                            msg = f"🚨 ALERTE PRESSION : {home} vs {away}\n📊 Score Pression: {pression_reelle:.2f}"
                             await bot.send_message(chat_id=CHAT_ID_CIBLE, text=msg)
 
             compteur_minutes += 1
@@ -56,7 +59,7 @@ async def verifier_matchs():
         await asyncio.sleep(60)
 
 async def main():
-    await bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot en ligne. Surveillance activée.")
+    await bot.send_message(chat_id=CHAT_ID_CIBLE, text="✅ Bot en ligne. Calculateur de pression activé.")
     await verifier_matchs()
 
 if __name__ == "__main__":
