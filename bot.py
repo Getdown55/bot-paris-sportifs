@@ -1,4 +1,3 @@
-
 import logging
 import asyncio
 import requests
@@ -25,7 +24,7 @@ async def get_stats(fixture_id):
         return []
 
 async def main():
-    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Correction xG appliquée.")
+    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Seuils xG personnalisés activés.")
     
     while True:
         try:
@@ -39,23 +38,37 @@ async def main():
                         stats = await get_stats(match["fixture"]["id"])
                         xg_total = 0.0
                         
-                        # CORRECTION ICI : On cherche les deux formats possibles
                         for team in stats:
                             for s in team.get("statistics", []):
                                 type_stat = str(s.get("type", "")).lower()
                                 if "expected" in type_stat and "goals" in type_stat:
                                     xg_total += float(s.get("value") or 0)
                         
-                        score_h = match["goals"]["home"]
-                        score_a = match["goals"]["away"]
-                        seuil = 1.2 if (score_h+score_a)==0 else (1.5 if (score_h+score_a)==1 else 1.8)
+                        s_h = match["goals"]["home"]
+                        s_a = match["goals"]["away"]
+                        
+                        # Application de tes seuils personnalisés
+                        if s_h == 0 and s_a == 0:
+                            seuil = 1.2
+                        elif (s_h == 1 and s_a == 0) or (s_h == 0 and s_a == 1):
+                            seuil = 1.5
+                        elif s_h == 1 and s_a == 1:
+                            seuil = 1.8
+                        elif (s_h == 2 and s_a == 0) or (s_h == 0 and s_a == 2):
+                            seuil = 2.0
+                        elif (s_h == 2 and s_a == 1) or (s_h == 1 and s_a == 2):
+                            seuil = 2.2
+                        elif s_h == 2 and s_a == 2:
+                            seuil = 2.5
+                        else:
+                            seuil = 2.5
                         
                         match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
                         
                         if xg_total >= seuil:
-                            await bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} | Total xG: {xg_total:.2f}")
+                            await bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
                         
-                        logging.info(f"SCAN : {match_name} | xG calculé : {xg_total:.2f} (Seuil: {seuil})")
+                        logging.info(f"SCAN : {match_name} ({s_h}-{s_a}) | xG calculé : {xg_total:.2f} (Seuil: {seuil})")
 
         except Exception as e:
             logging.error(f"Erreur : {e}")
