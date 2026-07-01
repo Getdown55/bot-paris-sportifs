@@ -12,7 +12,6 @@ HEADERS = {
 }
 IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1]
 
-# Configuration des logs pour avoir le suivi temporel précis dans Render
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -20,7 +19,6 @@ logging.basicConfig(
 bot = Bot(token=TOKEN)
 
 async def get_stats(fixture_id):
-    """Récupère les statistiques détaillées (dont xG) pour un match."""
     url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
     try:
         response = requests.get(url, headers=HEADERS, timeout=10)
@@ -31,26 +29,22 @@ async def get_stats(fixture_id):
     return []
 
 async def main():
-    # Notification de démarrage pour confirmer que le script est bien lancé
-    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Mode audit et surveillance xG activé.")
+    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Mode audit xG et debug activé.")
     logging.info("--- DÉBUT DU SCRIPT ---")
     
     compteur_log = 0
     while True:
         try:
-            # Heartbeat pour confirmer le fonctionnement continu dans les logs
             compteur_log += 1
             if compteur_log >= 60:
                 logging.info("HEARTBEAT: Le bot est toujours en surveillance active.")
                 compteur_log = 0
 
-            # Récupération des matchs live
             url = "https://v3.football.api-sports.io/fixtures?live=all"
             response = requests.get(url, headers=HEADERS, timeout=10)
             data = response.json()
 
             for match in data.get("response", []):
-                # Vérification championnat
                 if match["league"]["id"] in IDS_CHAMPIONNATS:
                     minute = match["fixture"]["status"]["elapsed"]
                     
@@ -59,14 +53,20 @@ async def main():
                         score_away = match["goals"]["away"]
                         stats = await get_stats(match["fixture"]["id"])
                         
-                        # Calcul du total xG
                         xg_total = 0.0
+                        found_xg = False
+                        
+                        # Debug : Si stats reçues mais pas de xG, on affiche tout pour comprendre
                         for team in stats:
                             for s in team.get("statistics", []):
                                 if s["type"] == "Expected Goals":
                                     xg_total += float(s["value"] or 0)
+                                    found_xg = True
                         
-                        # Logique des seuils dynamiques
+                        # Ajout debug : si xG est 0, on log les stats brutes pour vérifier l'API
+                        if not found_xg and stats:
+                            logging.info(f"DEBUG: Aucune donnée xG trouvée pour {match['teams']['home']['name']} vs {match['teams']['away']['name']}. Stats reçues: {stats}")
+                        
                         seuil = 2.0 
                         if score_home == 0 and score_away == 0: seuil = 1.2
                         elif (score_home + score_away) == 1: seuil = 1.5
@@ -74,12 +74,10 @@ async def main():
                         
                         match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
                         
-                        # Système d'audit fiable dans les logs
                         if xg_total >= seuil:
                             logging.info(f"ALERTE : {match_name} ({score_home}-{score_away}) - xG {xg_total:.2f} >= seuil {seuil}")
                             await bot.send_message(chat_id=CHAT_ID, text=f"🚨 Alerte xG {minute}' : {match_name} ({score_home}-{score_away}) | Total xG: {xg_total:.2f}")
                         else:
-                            # Cette ligne te prouve que le match a été vu, analysé, et pourquoi il n'est pas alerté
                             logging.info(f"SCAN : {match_name} vu à la {minute}' (xG {xg_total:.2f} < seuil {seuil}).")
 
         except Exception as e:
