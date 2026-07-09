@@ -6,6 +6,8 @@ from telegram import Bot
 # --- CONFIGURATION ---
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
 CHAT_ID = "-1003960057728"
+URL_SHEET = "https://script.google.com/macros/s/AKfycbxmCm1bD9hzpF-ZBkHHSENeHKFxO2rYlunACdYE9JLiHNz542fUE9guF-vGc9CSva8c/exec"
+
 HEADERS = {
     "x-rapidapi-key": "Fd062d2a521ed65d8c0944cc4a373600", 
     "x-rapidapi-host": "v3.football.api-sports.io"
@@ -14,6 +16,18 @@ IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 13
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 bot = Bot(token=TOKEN)
+
+# Fonction pour envoyer les données au Google Sheet
+def envoyer_vers_sheets(match_name, score, xg_total):
+    payload = {
+        "match": match_name,
+        "score": score,
+        "xg": xg_total
+    }
+    try:
+        requests.post(URL_SHEET, json=payload, timeout=5)
+    except:
+        pass 
 
 async def get_stats(fixture_id):
     url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
@@ -24,7 +38,7 @@ async def get_stats(fixture_id):
         return []
 
 async def main():
-    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Seuils xG personnalisés activés.")
+    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Seuils xG personnalisés et lien Sheets activés.")
     
     while True:
         try:
@@ -47,26 +61,22 @@ async def main():
                         s_h = match["goals"]["home"]
                         s_a = match["goals"]["away"]
                         
-                        # Application de tes seuils personnalisés
-                        if s_h == 0 and s_a == 0:
-                            seuil = 1.2
-                        elif (s_h == 1 and s_a == 0) or (s_h == 0 and s_a == 1):
-                            seuil = 1.5
-                        elif s_h == 1 and s_a == 1:
-                            seuil = 1.8
-                        elif (s_h == 2 and s_a == 0) or (s_h == 0 and s_a == 2):
-                            seuil = 2.0
-                        elif (s_h == 2 and s_a == 1) or (s_h == 1 and s_a == 2):
-                            seuil = 2.2
-                        elif s_h == 2 and s_a == 2:
-                            seuil = 2.5
-                        else:
-                            seuil = 2.5
+                        # Seuils personnalisés
+                        if s_h == 0 and s_a == 0: seuil = 1.2
+                        elif (s_h == 1 and s_a == 0) or (s_h == 0 and s_a == 1): seuil = 1.5
+                        elif s_h == 1 and s_a == 1: seuil = 1.8
+                        elif (s_h == 2 and s_a == 0) or (s_h == 0 and s_a == 2): seuil = 2.0
+                        elif (s_h == 2 and s_a == 1) or (s_h == 1 and s_a == 2): seuil = 2.2
+                        elif s_h == 2 and s_a == 2: seuil = 2.5
+                        else: seuil = 2.5
                         
                         match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
                         
                         if xg_total >= seuil:
+                            # Envoi Telegram
                             await bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
+                            # Envoi Google Sheets
+                            envoyer_vers_sheets(match_name, f"{s_h}-{s_a}", f"{xg_total:.2f}")
                         
                         logging.info(f"SCAN : {match_name} ({s_h}-{s_a}) | xG calculé : {xg_total:.2f} (Seuil: {seuil})")
 
