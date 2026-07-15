@@ -1,4 +1,4 @@
-Import logging
+import logging
 import asyncio
 import requests
 from telegram import Bot
