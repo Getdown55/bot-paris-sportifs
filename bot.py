@@ -17,39 +17,39 @@ IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 13
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 bot = Bot(token=TOKEN)
 
-# Fonction pour envoyer les données au Google Sheet
+# Fonction sécurisée pour envoyer vers Sheets
 def envoyer_vers_sheets(match_name, score, xg_total):
-    payload = {
-        "match": match_name,
-        "score": score,
-        "xg": xg_total
-    }
+    payload = {"match": match_name, "score": score, "xg": xg_total}
     try:
-        requests.post(URL_SHEET, json=payload, timeout=5)
+        # Timeout très court pour ne pas bloquer le bot
+        requests.post(URL_SHEET, json=payload, timeout=3)
     except:
         pass 
 
-async def get_stats(fixture_id):
+# Fonction sécurisée pour récupérer les stats
+def get_stats_sync(fixture_id):
     url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
+        response = requests.get(url, headers=HEADERS, timeout=5)
         return response.json().get("response", [])
     except:
         return []
 
 async def main():
-    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot en ligne. Seuils xG personnalisés et lien Sheets activés.")
+    await bot.send_message(chat_id=CHAT_ID, text="✅ Bot redémarré en mode sécurisé.")
     
     while True:
         try:
+            # Récupération des matchs live avec timeout strict
             url = "https://v3.football.api-sports.io/fixtures?live=all"
-            data = requests.get(url, headers=HEADERS, timeout=10).json()
+            response = requests.get(url, headers=HEADERS, timeout=5)
+            data = response.json()
 
             for match in data.get("response", []):
                 if match["league"]["id"] in IDS_CHAMPIONNATS:
                     minute = match["fixture"]["status"]["elapsed"]
                     if minute >= 75:
-                        stats = await get_stats(match["fixture"]["id"])
+                        stats = get_stats_sync(match["fixture"]["id"])
                         xg_total = 0.0
                         
                         for team in stats:
@@ -61,7 +61,6 @@ async def main():
                         s_h = match["goals"]["home"]
                         s_a = match["goals"]["away"]
                         
-                        # Seuils personnalisés
                         if s_h == 0 and s_a == 0: seuil = 1.2
                         elif (s_h == 1 and s_a == 0) or (s_h == 0 and s_a == 1): seuil = 1.5
                         elif s_h == 1 and s_a == 1: seuil = 1.8
@@ -73,15 +72,14 @@ async def main():
                         match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
                         
                         if xg_total >= seuil:
-                            # Envoi Telegram
                             await bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
-                            # Envoi Google Sheets
                             envoyer_vers_sheets(match_name, f"{s_h}-{s_a}", f"{xg_total:.2f}")
                         
-                        logging.info(f"SCAN : {match_name} ({s_h}-{s_a}) | xG calculé : {xg_total:.2f} (Seuil: {seuil})")
+                        logging.info(f"SCAN : {match_name} ({s_h}-{s_a}) | xG calculé : {xg_total:.2f}")
 
         except Exception as e:
-            logging.error(f"Erreur : {e}")
+            logging.error(f"Erreur lors du cycle : {e}")
+            
         await asyncio.sleep(60)
 
 if __name__ == "__main__":
