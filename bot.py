@@ -9,7 +9,7 @@ HEADERS = {
     "x-rapidapi-key": "Fd062d2a521ed65d8c0944cc4a373600", 
     "x-rapidapi-host": "v3.football.api-sports.io"
 }
-IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1]
+IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1, 283]
 
 bot = Bot(token=TOKEN)
 
