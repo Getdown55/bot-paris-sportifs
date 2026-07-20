@@ -22,7 +22,7 @@ def get_stats(fixture_id):
     except:
         return []
 
-log("--- BOT COMPLET AVEC TELEGRAM ACTIVE ---")
+log("--- BOT COMPLET AVEC DEBUG ACTIVE ---")
 
 while True:
     try:
@@ -36,6 +36,11 @@ while True:
                     stats = get_stats(match["fixture"]["id"])
                     xg_total = sum(float(s.get("value") or 0) for team in stats for s in team.get("statistics", []) if "expected" in str(s.get("type", "")).lower() and "goals" in str(s.get("type", "")).lower())
                     
+                    match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
+                    
+                    # Ligne de DEBUG pour vérifier les xG
+                    log(f"DEBUG : {match_name} | Minute: {minute} | xG trouvé: {xg_total:.2f}")
+                    
                     s_h, s_a = match["goals"]["home"], match["goals"]["away"]
                     
                     if s_h == 0 and s_a == 0: seuil = 1.2
@@ -45,16 +50,12 @@ while True:
                     elif (s_h==2 and s_a==1) or (s_h==1 and s_a==2): seuil = 2.2
                     else: seuil = 2.5
                     
-                    match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
-                    
                     if xg_total >= seuil:
                         try:
                             bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
                             log(f"TELEGRAM ENVOYE : {match_name}")
                         except Exception as telegram_error:
                             log(f"Erreur Telegram : {telegram_error}")
-                    
-                    log(f"SCAN : {match_name} ({s_h}-{s_a}) | xG: {xg_total:.2f} (Seuil: {seuil})")
         
     except Exception as e:
         log(f"Erreur de scan : {e}")
