@@ -14,15 +14,14 @@ IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 13
 
 bot = Bot(token=TOKEN)
 
-def get_stats(fixture_id):
-    url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        return response.json().get("response", [])
-    except:
-        return []
+# --- TEST TELEGRAM IMMEDIAT AU DEMARRAGE ---
+try:
+    bot.send_message(chat_id=CHAT_ID, text="✅ Test de connexion : Le bot communique parfaitement avec Telegram !")
+    log("TELEGRAM : Message de test envoyé avec succès.")
+except Exception as e:
+    log(f"TELEGRAM : Échec du test -> {e}")
 
-log("--- BOT DE RETOUR EN PRODUCTION ---")
+log("--- BOT EN ATTENTE DE REACTIVATION DE L'API ---")
 
 while True:
     try:
@@ -31,7 +30,7 @@ while True:
 
         matchs_presents = data.get("response", [])
         if not matchs_presents:
-            log("Aucun match en direct sur l'ensemble de l'API.")
+            log("Aucun match en direct (quota API probablement dépassé).")
             
         for match in matchs_presents:
             if match["league"]["id"] in IDS_CHAMPIONNATS:
@@ -53,11 +52,8 @@ while True:
                     else: seuil = 2.5
                     
                     if xg_total >= seuil:
-                        try:
-                            bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
-                            log(f"TELEGRAM ENVOYE : {match_name}")
-                        except Exception as telegram_error:
-                            log(f"Erreur Telegram : {telegram_error}")
+                        bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
+                        log(f"TELEGRAM ENVOYE : {match_name}")
         
     except Exception as e:
         log(f"Erreur de scan : {e}")
