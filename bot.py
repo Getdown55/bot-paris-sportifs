@@ -22,7 +22,7 @@ def get_stats(fixture_id):
     except:
         return []
 
-log("--- BOT COMPLET AVEC DEBUG ACTIVE ---")
+log("--- MODE DEBUG TOTAL ACTIVE ---")
 
 while True:
     try:
@@ -30,34 +30,32 @@ while True:
         data = requests.get(url, headers=HEADERS, timeout=10).json()
 
         for match in data.get("response", []):
-            if match["league"]["id"] in IDS_CHAMPIONNATS:
-                minute = match["fixture"]["status"]["elapsed"]
-                if minute >= 75:
-                    stats = get_stats(match["fixture"]["id"])
-                    xg_total = sum(float(s.get("value") or 0) for team in stats for s in team.get("statistics", []) if "expected" in str(s.get("type", "")).lower() and "goals" in str(s.get("type", "")).lower())
-                    
-                    match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
-                    
-                    # Ligne de DEBUG pour vérifier les xG
-                    log(f"DEBUG : {match_name} | Minute: {minute} | xG trouvé: {xg_total:.2f}")
-                    
-                    s_h, s_a = match["goals"]["home"], match["goals"]["away"]
-                    
-                    if s_h == 0 and s_a == 0: seuil = 1.2
-                    elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
-                    elif s_h == 1 and s_a == 1: seuil = 1.8
-                    elif (s_h==2 and s_a==0) or (s_h==0 and s_a==2): seuil = 2.0
-                    elif (s_h==2 and s_a==1) or (s_h==1 and s_a==2): seuil = 2.2
-                    else: seuil = 2.5
-                    
-                    if xg_total >= seuil:
-                        try:
-                            bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
-                            log(f"TELEGRAM ENVOYE : {match_name}")
-                        except Exception as telegram_error:
-                            log(f"Erreur Telegram : {telegram_error}")
+            match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
+            league_id = match["league"]["id"]
+            minute = match["fixture"]["status"]["elapsed"]
+            
+            # Log de TOUS les matchs trouvés pour comprendre le filtrage
+            log(f"SCAN MATCH : {match_name} | LeagueID: {league_id} | Minute: {minute}")
+
+            if league_id in IDS_CHAMPIONNATS and minute >= 75:
+                stats = get_stats(match["fixture"]["id"])
+                xg_total = sum(float(s.get("value") or 0) for team in stats for s in team.get("statistics", []) if "expected" in str(s.get("type", "")).lower() and "goals" in str(s.get("type", "")).lower())
+                
+                log(f"DEBUG xG : {match_name} | xG trouvé: {xg_total:.2f}")
+                
+                s_h, s_a = match["goals"]["home"], match["goals"]["away"]
+                if s_h == 0 and s_a == 0: seuil = 1.2
+                elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
+                elif s_h == 1 and s_a == 1: seuil = 1.8
+                elif (s_h==2 and s_a==0) or (s_h==0 and s_a==2): seuil = 2.0
+                elif (s_h==2 and s_a==1) or (s_h==1 and s_a==2): seuil = 2.2
+                else: seuil = 2.5
+                
+                if xg_total >= seuil:
+                    bot.send_message(chat_id=CHAT_ID, text=f"🚨 ALERTE xG {minute}' : {match_name} ({s_h}-{s_a}) | Total xG: {xg_total:.2f}")
+                    log(f"TELEGRAM ENVOYE : {match_name}")
         
     except Exception as e:
-        log(f"Erreur de scan : {e}")
+        log(f"Erreur : {e}")
         
     time.sleep(60)
