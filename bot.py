@@ -38,6 +38,20 @@ def get_stats(fixture_id):
     except:
         return []
 
+def extract_xg(stats_data):
+    total_xg = 0.0
+    for team in stats_data:
+        for stat in team.get("statistics", []):
+            type_name = str(stat.get("type") or "").lower().strip()
+            if "expected" in type_name or "xg" in type_name:
+                val = stat.get("value")
+                if val is not None and val != "":
+                    try:
+                        total_xg += float(val)
+                    except ValueError:
+                        pass
+    return total_xg
+
 async def send_telegram(text):
     try:
         await bot.send_message(chat_id=CHAT_ID, text=text)
@@ -66,7 +80,7 @@ async def main():
                     
                     if minute >= 75 and fixture_id not in matchs_enregistres:
                         stats = get_stats(fixture_id)
-                        xg_total = sum(float(s.get("value") or 0) for team in stats for s in team.get("statistics", []) if "expected" in str(s.get("type", "")).lower() and "goals" in str(s.get("type", "")).lower())
+                        xg_total = extract_xg(stats)
                         
                         match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
                         s_h, s_a = match["goals"]["home"], match["goals"]["away"]
