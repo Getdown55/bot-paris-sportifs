@@ -62,7 +62,8 @@ async def send_telegram(text):
 async def main():
     log("--- INITIALISATION DU BOT (TELEGRAM + GOOGLE SHEET INTEGRAL) ---")
     
-    matchs_enregistres = set()  # Pour éviter les doublons au sein du même match
+    # Dictionnaire de suivi pour conserver le dernier score et dernier xG alerte
+    matchs_suivis = {}
 
     while True:
         try:
@@ -78,31 +79,53 @@ async def main():
                     minute = match["fixture"]["status"]["elapsed"]
                     fixture_id = match["fixture"]["id"]
                     
-                    if minute >= 75 and fixture_id not in matchs_enregistres:
-                        stats = get_stats(fixture_id)
-                        xg_total = extract_xg(stats)
-                        
-                        match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
+                    if minute >= 75:
                         s_h, s_a = match["goals"]["home"], match["goals"]["away"]
                         score_str = f"{s_h}-{s_a}"
+                        match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
 
-                        log(f"SCAN 75' : {match_name} ({score_str}) | xG: {xg_total:.2f}")
-
-                        # 1. ENREGISTREMENT DANS GOOGLE SHEET (TOUS LES MATCHS DU SCAN)
-                        send_to_google_sheet(match_name, score_str, round(xg_total, 2))
-                        matchs_enregistres.add(fixture_id)
-
-                        # 2. DETERMINATION DU SEUIL XG
+                        # DETERMINATION DU SEUIL XG DE BASE
                         if s_h == 0 and s_a == 0: seuil = 1.2
                         elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
                         elif s_h == 1 and s_a == 1: seuil = 1.8
                         elif (s_h==2 and s_a==0) or (s_h==0 and s_a==2): seuil = 2.0
                         elif (s_h==2 and s_a==1) or (s_h==1 and s_a==2): seuil = 2.2
                         else: seuil = 2.5
-                        
-                        # 3. ALERTE TELEGRAM SI SEUIL DEPASSE
-                        if xg_total >= seuil:
-                            await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | Total xG: {xg_total:.2f}")
+
+                        # CAS 1 : PREMIER SCAN APRES 75 MINUTE
+                        if fixture_id not in matchs_suivis:
+                            stats = get_stats(fixture_id)
+                            xg_total = round(extract_xg(stats), 2)
+
+                            if xg_total >= seuil:
+                                log(f"SCAN 75' : {match_name} ({score_str}) | xG: {xg_total:.2f}")
+
+                                # Envoi Telegram + Google Sheet
+                                send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_total)
+                                await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | Total xG: {xg_total:.2f}")
+
+                                # Enregistrement dans le dictionnaire
+                                matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_total}
+
+                        # CAS 2 : SUIVI DES EVOLUTIONS (BUT OU +0.25 xG)
+                        else:
+                            dernier_etat = matchs_suivis[fixture_id]
+                            score_change = (score_str != dernier_etat['score'])
+
+                            stats = get_stats(fixture_id)
+                            xg_actuel = round(extract_xg(stats), 2)
+                            xg_increase = (xg_actuel - dernier_etat['xg']) >= 0.25
+
+                            if score_change or xg_increase:
+                                raison = "⚽ GOAL" if score_change else "📈 HAUSSE xG"
+                                log(f"EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | xG: {xg_actuel:.2f}")
+
+                                # Envoi Telegram + Google Sheet pour l'evolution
+                                send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_actuel)
+                                await send_telegram(f"🔄 EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | Total xG: {xg_actuel:.2f}")
+
+                                # Mise à jour de l'état conservé
+                                matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_actuel}
             
         except Exception as e:
             log(f"Erreur de scan : {e}")
