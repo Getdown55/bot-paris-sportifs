@@ -13,7 +13,7 @@ CHAT_ID = "-1003960057728"
 HEADERS = {"x-rapidapi-key": "Fd062d2a521ed65d8c0944cc4a373600", "x-rapidapi-host": "v3.football.api-sports.io"}
 IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1, 283]
 
-# TON URL GOOGLE APPS SCRIPT
+# URL GOOGLE APPS SCRIPT
 SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzz3kxJX8Gft52CKpLjs2iMvFXgQKb-0cX2SiWBc2w1eZa64XdAW4MmpqKMSGzVNRZ-/exec"
 
 bot = Bot(token=TOKEN)
@@ -34,8 +34,13 @@ def get_stats(fixture_id):
     url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
     try:
         response = requests.get(url, headers=HEADERS, timeout=10)
-        return response.json().get("response", [])
-    except:
+        if response.status_code == 200:
+            return response.json().get("response", [])
+        else:
+            log(f"Erreur API Stats HTTP {response.status_code}")
+            return []
+    except Exception as e:
+        log(f"Exception get_stats : {e}")
         return []
 
 def extract_xg(stats_data):
@@ -62,24 +67,29 @@ async def send_telegram(text):
 async def main():
     log("--- INITIALISATION DU BOT (TELEGRAM + GOOGLE SHEET INTEGRAL) ---")
     
-    # Dictionnaire de suivi pour conserver le dernier score et dernier xG alerte
     matchs_suivis = {}
 
     while True:
         try:
             url = "https://v3.football.api-sports.io/fixtures?live=all"
-            data = requests.get(url, headers=HEADERS, timeout=10).json()
+            response = requests.get(url, headers=HEADERS, timeout=10)
+            
+            if response.status_code != 200:
+                log(f"Erreur API Live HTTP {response.status_code}: {response.text[:100]}")
+                await asyncio.sleep(60)
+                continue
 
+            data = response.json()
             matchs_presents = data.get("response", [])
-            if not matchs_presents:
-                log("Aucun match en direct (quota API probablement dépassé ou aucun match en cours).")
-                
+            
+            log(f"[{time.strftime('%H:%M:%S')}] Scan effectue : {len(matchs_presents)} match(s) en direct.")
+
             for match in matchs_presents:
                 if match["league"]["id"] in IDS_CHAMPIONNATS:
                     minute = match["fixture"]["status"]["elapsed"]
                     fixture_id = match["fixture"]["id"]
                     
-                    if minute >= 75:
+                    if minute is not None and minute >= 75:
                         s_h, s_a = match["goals"]["home"], match["goals"]["away"]
                         score_str = f"{s_h}-{s_a}"
                         match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
@@ -100,11 +110,9 @@ async def main():
                             if xg_total >= seuil:
                                 log(f"SCAN 75' : {match_name} ({score_str}) | xG: {xg_total:.2f}")
 
-                                # Envoi Telegram + Google Sheet
                                 send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_total)
                                 await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | Total xG: {xg_total:.2f}")
 
-                                # Enregistrement dans le dictionnaire
                                 matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_total}
 
                         # CAS 2 : SUIVI DES EVOLUTIONS (BUT OU +0.25 xG)
@@ -120,15 +128,13 @@ async def main():
                                 raison = "⚽ GOAL" if score_change else "📈 HAUSSE xG"
                                 log(f"EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | xG: {xg_actuel:.2f}")
 
-                                # Envoi Telegram + Google Sheet pour l'evolution
                                 send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_actuel)
                                 await send_telegram(f"🔄 EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | Total xG: {xg_actuel:.2f}")
 
-                                # Mise à jour de l'état conservé
                                 matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_actuel}
             
         except Exception as e:
-            log(f"Erreur de scan : {e}")
+            log(f"Erreur globale de scan : {e}")
             
         await asyncio.sleep(60)
 
