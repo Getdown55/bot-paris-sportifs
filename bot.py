@@ -85,53 +85,67 @@ async def main():
             log(f"[{time.strftime('%H:%M:%S')}] Scan effectue : {len(matchs_presents)} match(s) en direct.")
 
             for match in matchs_presents:
-                if match["league"]["id"] in IDS_CHAMPIONNATS:
-                    minute = match["fixture"]["status"]["elapsed"]
-                    fixture_id = match["fixture"]["id"]
-                    
-                    if minute is not None and minute >= 75:
-                        s_h, s_a = match["goals"]["home"], match["goals"]["away"]
-                        score_str = f"{s_h}-{s_a}"
-                        match_name = f"{match['teams']['home']['name']} vs {match['teams']['away']['name']}"
+                try:
+                    league_id = match.get("league", {}).get("id")
+                    if league_id in IDS_CHAMPIONNATS:
+                        fixture = match.get("fixture", {})
+                        status_short = fixture.get("status", {}).get("short")
+                        minute = fixture.get("status", {}).get("elapsed")
+                        fixture_id = fixture.get("id")
+                        
+                        # Sécurité sur les minutes et statut actif
+                        if minute is not None and status_short in ["1H", "2H", "HT", "ET"] and minute >= 75:
+                            goals = match.get("goals", {})
+                            s_h = goals.get("home") if goals.get("home") is not None else 0
+                            s_a = goals.get("away") if goals.get("away") is not None else 0
+                            
+                            score_str = f"{s_h}-{s_a}"
+                            teams = match.get("teams", {})
+                            home_name = teams.get("home", {}).get("name", "Domicile")
+                            away_name = teams.get("away", {}).get("name", "Exterieur")
+                            match_name = f"{home_name} vs {away_name}"
 
-                        # DETERMINATION DU SEUIL XG DE BASE
-                        if s_h == 0 and s_a == 0: seuil = 1.2
-                        elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
-                        elif s_h == 1 and s_a == 1: seuil = 1.8
-                        elif (s_h==2 and s_a==0) or (s_h==0 and s_a==2): seuil = 2.0
-                        elif (s_h==2 and s_a==1) or (s_h==1 and s_a==2): seuil = 2.2
-                        else: seuil = 2.5
+                            # DETERMINATION DU SEUIL XG DE BASE
+                            if s_h == 0 and s_a == 0: seuil = 1.2
+                            elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
+                            elif s_h == 1 and s_a == 1: seuil = 1.8
+                            elif (s_h==2 and s_a==0) or (s_h==0 and s_a==2): seuil = 2.0
+                            elif (s_h==2 and s_a==1) or (s_h==1 and s_a==2): seuil = 2.2
+                            else: seuil = 2.5
 
-                        # CAS 1 : PREMIER SCAN APRES 75 MINUTE
-                        if fixture_id not in matchs_suivis:
-                            stats = get_stats(fixture_id)
-                            xg_total = round(extract_xg(stats), 2)
+                            # CAS 1 : PREMIER SCAN APRES 75 MINUTE
+                            if fixture_id not in matchs_suivis:
+                                stats = get_stats(fixture_id)
+                                xg_total = round(extract_xg(stats), 2)
 
-                            if xg_total >= seuil:
-                                log(f"SCAN 75' : {match_name} ({score_str}) | xG: {xg_total:.2f}")
+                                if xg_total >= seuil:
+                                    log(f"SCAN 75' : {match_name} ({score_str}) | xG: {xg_total:.2f}")
 
-                                send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_total)
-                                await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | Total xG: {xg_total:.2f}")
+                                    send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_total)
+                                    await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | Total xG: {xg_total:.2f}")
 
-                                matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_total}
+                                    matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_total}
 
-                        # CAS 2 : SUIVI DES EVOLUTIONS (BUT OU +0.25 xG)
-                        else:
-                            dernier_etat = matchs_suivis[fixture_id]
-                            score_change = (score_str != dernier_etat['score'])
+                            # CAS 2 : SUIVI DES EVOLUTIONS (BUT OU +0.25 xG)
+                            else:
+                                dernier_etat = matchs_suivis[fixture_id]
+                                score_change = (score_str != dernier_etat['score'])
 
-                            stats = get_stats(fixture_id)
-                            xg_actuel = round(extract_xg(stats), 2)
-                            xg_increase = (xg_actuel - dernier_etat['xg']) >= 0.25
+                                stats = get_stats(fixture_id)
+                                xg_actuel = round(extract_xg(stats), 2)
+                                xg_increase = (xg_actuel - dernier_etat['xg']) >= 0.25
 
-                            if score_change or xg_increase:
-                                raison = "⚽ GOAL" if score_change else "📈 HAUSSE xG"
-                                log(f"EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | xG: {xg_actuel:.2f}")
+                                if score_change or xg_increase:
+                                    raison = "⚽ GOAL" if score_change else "📈 HAUSSE xG"
+                                    log(f"EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | xG: {xg_actuel:.2f}")
 
-                                send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_actuel)
-                                await send_telegram(f"🔄 EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | Total xG: {xg_actuel:.2f}")
+                                    send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_actuel)
+                                    await send_telegram(f"🔄 EVOLUTION {minute}' ({raison}) : {match_name} ({score_str}) | Total xG: {xg_actuel:.2f}")
 
-                                matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_actuel}
+                                    matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_actuel}
+                except Exception as e_match:
+                    log(f"Erreur sur traitement d'un match : {e_match}")
+                    continue
             
         except Exception as e:
             log(f"Erreur globale de scan : {e}")
