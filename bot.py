@@ -43,19 +43,26 @@ def extract_xg(stats_data):
     if not stats_data:
         return total_xg
 
+    found_types = []
     for team in stats_data:
         for stat in team.get("statistics", []):
-            type_name = str(stat.get("type") or "").lower().strip()
-            # Prise en compte de tous les libellés possibles pour l'xG
-            if "expected" in type_name or "xg" in type_name or "expected_goals" in type_name:
+            type_name = str(stat.get("type") or "").strip()
+            found_types.append(type_name)
+            
+            type_lower = type_name.lower()
+            if "expected" in type_lower or "xg" in type_lower:
                 val = stat.get("value")
                 if val is not None and val != "":
                     try:
-                        # Nettoyage au cas où l'API renvoie une chaîne avec virgule
                         val_str = str(val).replace(",", ".").strip()
                         total_xg += float(val_str)
                     except ValueError:
                         pass
+
+    # Si aucun xG n'a été extrait, on log la liste des stats disponibles pour diagnostic
+    if total_xg == 0.0 and stats_data:
+        log(f"   ⚠️ Stats dispos mais xG non trouvé. Libellés reçus : {found_types[:6]}...")
+
     return total_xg
 
 async def send_telegram(text):
