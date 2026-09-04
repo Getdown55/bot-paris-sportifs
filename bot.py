@@ -43,25 +43,31 @@ def extract_xg(stats_data):
     if not stats_data:
         return total_xg
 
-    found_types = []
+    all_keys_found = []
+
     for team in stats_data:
         for stat in team.get("statistics", []):
             type_name = str(stat.get("type") or "").strip()
-            found_types.append(type_name)
+            all_keys_found.append(type_name)
             
             type_lower = type_name.lower()
+            # Inspection de tous les libellés possibles
             if "expected" in type_lower or "xg" in type_lower:
                 val = stat.get("value")
                 if val is not None and val != "":
                     try:
+                        # Si l'API renvoie un dictionnaire imbriqué (ex: {"value": 1.25})
+                        if isinstance(val, dict):
+                            val = val.get("value") or val.get("total") or 0.0
+                        
                         val_str = str(val).replace(",", ".").strip()
                         total_xg += float(val_str)
-                    except ValueError:
+                    except (ValueError, TypeError):
                         pass
 
-    # Si aucun xG n'a été extrait, on log la liste des stats disponibles pour diagnostic
+    # Log complet en cas de valeur nulle pour contrôler la réponse API
     if total_xg == 0.0 and stats_data:
-        log(f"   ⚠️ Stats dispos mais xG non trouvé. Libellés reçus : {found_types[:6]}...")
+        log(f"   🔍 Stats lues ({len(all_keys_found)} cles). Liste complète : {all_keys_found}")
 
     return total_xg
 
@@ -73,7 +79,7 @@ async def send_telegram(text):
         log(f"Erreur d'envoi Telegram : {e}")
 
 async def main():
-    log("--- INITIALISATION DU BOT (MODE DIAGNOSTIC) ---")
+    log("--- INITIALISATION DU BOT (MODE PAYANT PRO) ---")
     matchs_suivis = {}
 
     while True:
@@ -111,13 +117,7 @@ async def main():
                         away_name = teams.get("away", {}).get("name", "Exterieur")
                         match_name = f"{home_name} vs {away_name}"
 
-                        # Diagnostic dans les logs
-                        if minute is None:
-                            log(f"🔍 [SUIVI] {match_name} (Ligue {league_id}) -> Minute non disponible.")
-                            continue
-                            
-                        if minute < 75:
-                            log(f"🔍 [SUIVI] {match_name} ({minute}') -> Pas encore à 75min.")
+                        if minute is None or minute < 75:
                             continue
 
                         # DETERMINATION DU SEUIL XG
