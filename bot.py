@@ -40,14 +40,20 @@ def get_stats(fixture_id):
 
 def extract_xg(stats_data):
     total_xg = 0.0
+    if not stats_data:
+        return total_xg
+
     for team in stats_data:
         for stat in team.get("statistics", []):
             type_name = str(stat.get("type") or "").lower().strip()
-            if "expected" in type_name or "xg" in type_name:
+            # Prise en compte de tous les libellés possibles pour l'xG
+            if "expected" in type_name or "xg" in type_name or "expected_goals" in type_name:
                 val = stat.get("value")
                 if val is not None and val != "":
                     try:
-                        total_xg += float(val)
+                        # Nettoyage au cas où l'API renvoie une chaîne avec virgule
+                        val_str = str(val).replace(",", ".").strip()
+                        total_xg += float(val_str)
                     except ValueError:
                         pass
     return total_xg
