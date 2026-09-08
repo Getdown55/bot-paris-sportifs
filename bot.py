@@ -10,9 +10,13 @@ def log(message):
 
 TOKEN = "8625843812:AAEgCJDUqjXP_ShrMpZUbAtbzI9h2eK51SA"
 CHAT_ID = "-1003960057728"
-HEADERS = {"x-rapidapi-key": "Fd062d2a521ed65d8c0944cc4a373600", "x-rapidapi-host": "v3.football.api-sports.io"}
-IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1, 283]
 
+# Authentification directe API-Sports (Compte Pro)
+HEADERS = {
+    "x-apisports-key": "Fd062d2a521ed65d8c0944cc4a373600"
+}
+
+IDS_CHAMPIONNATS = [39, 61, 140, 135, 78, 94, 88, 144, 203, 119, 40, 62, 141, 136, 79, 253, 71, 103, 99, 2, 3, 848, 1, 283]
 SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzz3kxJX8Gft52CKpLjs2iMvFXgQKb-0cX2SiWBc2w1eZa64XdAW4MmpqKMSGzVNRZ-/exec"
 
 bot = Bot(token=TOKEN)
@@ -43,32 +47,17 @@ def extract_xg(stats_data):
     if not stats_data:
         return total_xg
 
-    all_keys_found = []
-
     for team in stats_data:
         for stat in team.get("statistics", []):
-            type_name = str(stat.get("type") or "").strip()
-            all_keys_found.append(type_name)
-            
-            type_lower = type_name.lower()
-            # Inspection de tous les libellés possibles
-            if "expected" in type_lower or "xg" in type_lower:
+            type_name = str(stat.get("type") or "").lower().strip()
+            if "expected" in type_name or "xg" in type_name:
                 val = stat.get("value")
                 if val is not None and val != "":
                     try:
-                        # Si l'API renvoie un dictionnaire imbriqué (ex: {"value": 1.25})
-                        if isinstance(val, dict):
-                            val = val.get("value") or val.get("total") or 0.0
-                        
                         val_str = str(val).replace(",", ".").strip()
                         total_xg += float(val_str)
-                    except (ValueError, TypeError):
+                    except ValueError:
                         pass
-
-    # Log complet en cas de valeur nulle pour contrôler la réponse API
-    if total_xg == 0.0 and stats_data:
-        log(f"   🔍 Stats lues ({len(all_keys_found)} cles). Liste complète : {all_keys_found}")
-
     return total_xg
 
 async def send_telegram(text):
@@ -79,7 +68,7 @@ async def send_telegram(text):
         log(f"Erreur d'envoi Telegram : {e}")
 
 async def main():
-    log("--- INITIALISATION DU BOT (MODE PAYANT PRO) ---")
+    log("--- INITIALISATION DU BOT (COMPTE PRO API-SPORTS) ---")
     matchs_suivis = {}
 
     while True:
