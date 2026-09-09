@@ -49,15 +49,18 @@ def extract_xg(stats_data):
 
     for team in stats_data:
         for stat in team.get("statistics", []):
-            type_name = str(stat.get("type") or "").lower().strip()
+            type_name = str(stat.get("type") or "").lower().replace("_", " ").strip()
+            
+            # Détection flexible : "expected goals", "xg", "expected_goals"
             if "expected" in type_name or "xg" in type_name:
                 val = stat.get("value")
                 if val is not None and val != "":
                     try:
-                        val_str = str(val).replace(",", ".").strip()
-                        total_xg += float(val_str)
-                    except ValueError:
+                        val_clean = str(val).replace(",", ".").replace("%", "").strip()
+                        total_xg += float(val_clean)
+                    except (ValueError, TypeError):
                         pass
+
     return total_xg
 
 async def send_telegram(text):
