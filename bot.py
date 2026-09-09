@@ -45,22 +45,33 @@ def get_stats(fixture_id):
 def extract_xg(stats_data):
     total_xg = 0.0
     if not stats_data:
+        log("   🔍 Aucune donnee statistique renvoyee par l'API pour ce match.")
         return total_xg
 
+    found_stats = []
+
     for team in stats_data:
+        team_name = team.get("team", {}).get("name", "Equipe")
         for stat in team.get("statistics", []):
-            type_name = str(stat.get("type") or "").lower().replace("_", " ").strip()
+            type_name = str(stat.get("type") or "").strip()
+            val = stat.get("value")
             
-            # Détection flexible : "expected goals", "xg", "expected_goals"
-            if "expected" in type_name or "xg" in type_name:
-                val = stat.get("value")
+            # Stocke les types de stats recus pour le log de controle
+            found_stats.append(f"{type_name}: {val}")
+
+            # Capture ultra-large du libelle xG (case-insensitive)
+            t_lower = type_name.lower()
+            if "expected" in t_lower or "xg" in t_lower:
                 if val is not None and val != "":
                     try:
-                        val_clean = str(val).replace(",", ".").replace("%", "").strip()
-                        total_xg += float(val_clean)
+                        val_str = str(val).replace(",", ".").replace("%", "").strip()
+                        total_xg += float(val_str)
                     except (ValueError, TypeError):
                         pass
 
+    # Ce log permet de verifier en direct les cles exactes renvoyees par API-Sports
+    sample_keys = found_stats[:8] if found_stats else ["Aucune stat"]
+    log(f"   🔍 Stats recues ({len(found_stats)}) : {sample_keys} | Total xG extrait = {round(total_xg, 2)}")
     return total_xg
 
 async def send_telegram(text):
@@ -71,7 +82,7 @@ async def send_telegram(text):
         log(f"Erreur d'envoi Telegram : {e}")
 
 async def main():
-    log("--- INITIALISATION DU BOT (COMPTE PRO API-SPORTS) ---")
+    log("--- INITIALISATION DU BOT (MODE DIAGNOSTIC XG NATIF) ---")
     matchs_suivis = {}
 
     while True:
@@ -112,7 +123,7 @@ async def main():
                         if minute is None or minute < 75:
                             continue
 
-                        # DETERMINATION DU SEUIL XG
+                        # DETERMINATION DU SEUIL XG SELON LE SCORE
                         if s_h == 0 and s_a == 0: seuil = 1.2
                         elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
                         elif s_h == 1 and s_a == 1: seuil = 1.8
