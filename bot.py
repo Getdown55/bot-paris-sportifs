@@ -21,6 +21,9 @@ SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzz3kxJX8Gft52CKpLjs
 
 bot = Bot(token=TOKEN)
 
+# Variable de suivi globale pour la veille du retour xG natif
+native_xg_detected_alerted = False
+
 def send_to_google_sheet(match_name, score, xg_total):
     payload = {"match": match_name, "score": score, "xg": xg_total}
     try:
@@ -43,36 +46,53 @@ def get_stats(fixture_id):
         return []
 
 def extract_xg(stats_data):
-    total_xg = 0.0
+    global native_xg_detected_alerted
     if not stats_data:
-        log("   🔍 Aucune donnee statistique renvoyee par l'API pour ce match.")
-        return total_xg
+        return 0.0, False
 
-    found_stats = []
+    # 1. VEILLE ET CAPTURE DU XG NATIF SI RETOUR DE L'API
+    total_xg_native = 0.0
+    has_native_xg = False
 
     for team in stats_data:
-        team_name = team.get("team", {}).get("name", "Equipe")
+        for stat in team.get("statistics", []):
+            type_name = str(stat.get("type") or "").strip().lower()
+            if "expected" in type_name or "xg" in type_name:
+                val = stat.get("value")
+                if val is not None and val != "":
+                    try:
+                        val_str = str(val).replace(",", ".").replace("%", "").strip()
+                        total_xg_native += float(val_str)
+                        has_native_xg = True
+                    except (ValueError, TypeError):
+                        pass
+
+    if has_native_xg:
+        return round(total_xg_native, 2), True
+
+    # 2. CALCUL ESTIME BASE SUR LES TIRS LIVE (OPTION HYBRIDE)
+    shots_on_goal = 0
+    shots_inside_box = 0
+    shots_off_goal = 0
+    blocked_shots = 0
+
+    for team in stats_data:
         for stat in team.get("statistics", []):
             type_name = str(stat.get("type") or "").strip()
             val = stat.get("value")
             
-            # Stocke les types de stats recus pour le log de controle
-            found_stats.append(f"{type_name}: {val}")
+            try:
+                val_int = int(val) if val is not None else 0
+            except (ValueError, TypeError):
+                val_int = 0
 
-            # Capture ultra-large du libelle xG (case-insensitive)
-            t_lower = type_name.lower()
-            if "expected" in t_lower or "xg" in t_lower:
-                if val is not None and val != "":
-                    try:
-                        val_str = str(val).replace(",", ".").replace("%", "").strip()
-                        total_xg += float(val_str)
-                    except (ValueError, TypeError):
-                        pass
+            if type_name == "Shots on Goal": shots_on_goal += val_int
+            elif type_name == "Shots insidebox": shots_inside_box += val_int
+            elif type_name == "Shots off Goal": shots_off_goal += val_int
+            elif type_name == "Blocked Shots": blocked_shots += val_int
 
-    # Ce log permet de verifier en direct les cles exactes renvoyees par API-Sports
-    sample_keys = found_stats[:8] if found_stats else ["Aucune stat"]
-    log(f"   🔍 Stats recues ({len(found_stats)}) : {sample_keys} | Total xG extrait = {round(total_xg, 2)}")
-    return total_xg
+    estimated_xg = (shots_on_goal * 0.30) + (shots_inside_box * 0.15) + ((shots_off_goal + blocked_shots) * 0.05)
+    return round(estimated_xg, 2), False
 
 async def send_telegram(text):
     try:
@@ -82,7 +102,8 @@ async def send_telegram(text):
         log(f"Erreur d'envoi Telegram : {e}")
 
 async def main():
-    log("--- INITIALISATION DU BOT (MODE DIAGNOSTIC XG NATIF) ---")
+    global native_xg_detected_alerted
+    log("--- INITIALISATION DU BOT (CALCUL LIVE + VEILLE RETOUR XG NATIF) ---")
     matchs_suivis = {}
 
     while True:
@@ -123,7 +144,7 @@ async def main():
                         if minute is None or minute < 75:
                             continue
 
-                        # DETERMINATION DU SEUIL XG SELON LE SCORE
+                        # SEUILS SELON SCORE
                         if s_h == 0 and s_a == 0: seuil = 1.2
                         elif (s_h==1 and s_a==0) or (s_h==0 and s_a==1): seuil = 1.5
                         elif s_h == 1 and s_a == 1: seuil = 1.8
@@ -132,15 +153,21 @@ async def main():
                         else: seuil = 2.5
 
                         stats = get_stats(fixture_id)
-                        xg_total = round(extract_xg(stats), 2)
+                        xg_total, is_native = extract_xg(stats)
 
-                        log(f"📊 [ANALYSE 75'] {match_name} ({score_str}) à {minute}' | xG trouve: {xg_total} | Seuil requis: {seuil}")
+                        # Alerte unique Telegram lors de la réapparition du xG natif chez le fournisseur
+                        if is_native and not native_xg_detected_alerted:
+                            await send_telegram("ℹ️ **INFO API** : Le flux xG natif d'API-Football est officiellement de retour ! Le bot l'utilise à nouveau.")
+                            native_xg_detected_alerted = True
+
+                        mode_label = "Natif" if is_native else "Calculé"
+                        log(f"📊 [ANALYSE 75'] {match_name} ({score_str}) à {minute}' | xG ({mode_label}): {xg_total} | Seuil: {seuil}")
 
                         if fixture_id not in matchs_suivis:
                             if xg_total >= seuil:
                                 log(f"🚨 DECLENCHEMENT ALERTE : {match_name}")
                                 send_to_google_sheet(f"{match_name} ({minute}')", score_str, xg_total)
-                                await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | Total xG: {xg_total:.2f}")
+                                await send_telegram(f"🚨 ALERTE xG {minute}' : {match_name} ({score_str}) | xG ({mode_label}): {xg_total:.2f}")
                                 matchs_suivis[fixture_id] = {'score': score_str, 'xg': xg_total}
                             else:
                                 log(f"❌ [REJET] xG insuffisant ({xg_total} < {seuil})")
